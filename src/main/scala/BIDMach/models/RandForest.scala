@@ -111,6 +111,25 @@ object RandForest {
     }
   }
 
+  // def treePackkk(sfdata : Mat, treenodes : Mat, cats : Mat, nsamps : Int, fieldLengths: Mat) : Mat = {
+  //   (sfdata, treenodes, cats, nsamps, fieldLengths) match {
+  //     case (sfd : GIMat, tn : GIMat, cts : GSMat, ns : Int, fL :GIMat) => {
+  //       val out = sfd.izeros(tn.nrows * ns * cts.nnz * 2, 1)
+  //       // public static native int treePack(Pointer id, Pointer tn, Pointer icats, Pointer jc, Pointer out, Pointer fl, int nrows, int ncols, int ntrees, int nsamps);
+  //       val ntrees = tn.nrows
+  //       CUMACH.treePack(sfd.data, tn.data, cts.ir, cts.jc, out.data, fL.data, sfd.nrows, sfd.ncols, ntrees, ns)
+  //       out
+  //     }
+  //     case (sfd : IMat, tn : IMat, cts : SMat, ns : Int, fL : GIMat) => {
+  //       val out = sfd.izeros(tn.nrows * ns * cts.nnz * 2, 1)
+  //       val c = new IMat(cts.ir.length, 1, cts.ir) - 1
+  //       val cjc = new IMat(cts.jc.length, 1, cts.jc) - 1
+  //       treePack(sfd, tn, c, out, cjc, ns, fL)
+  //       out
+  //     }
+  //   }
+  // }
+
   def treePackk(sfdata : Mat, treenodes : Mat, cats : Mat, nsamps : Int, fieldlengths: Mat, useGPU : Boolean) : Array[Long] = {
     (sfdata, treenodes, cats, nsamps, fieldlengths, useGPU) match {
       case (sfd : IMat, tn : IMat, cts : SMat, ns : Int, fL : IMat, true) => {
@@ -122,13 +141,13 @@ object RandForest {
         val deviceData : Pointer = new Pointer();
         cudaMalloc(deviceData, memorySize);
         // cudaMemcpy(deviceData, Pointer.to(out), memorySize, cudaMemcpyKind.cudaMemcpyHostToDevice);
-        val gFd = GMat(sfd) 
+        val gFd = GIMat(sfd) 
         val gsCats = GSMat(cts)
         val gsCatsJC = (GIMat(new IMat(cts.jc.length, 1, cts.jc) - 1).data);
         val gsCatsIR = (GIMat(new IMat(cts.ir.length, 1, cts.ir) - 1).data);
         val giTreenodes = GIMat(tn)
         val gifL = GIMat(fL)
-        CUMACH.treePack(gFd.data, giTreenodes.data, gsCatsIR, gsCatsJC, deviceData, gifL.data, sfd.nrows, sfd.ncols, ntrees, ns)
+        CUMACH.treePack(gFd.data, giTreenodes.data, gsCatsIR, gsCatsJC, deviceData, gifL.data, gFd.nrows, gFd.ncols, ntrees, ns)
         cudaMemcpy(Pointer.to(out), deviceData, memorySize, cudaMemcpyKind.cudaMemcpyDeviceToHost);
         cudaFree(deviceData);
         gFd.free; gsCats.free; giTreenodes.free; gifL.free
@@ -228,14 +247,14 @@ object RandForest {
       val dfieldlensM = GIMat(fieldlens)
       val dkeys : Pointer = new Pointer()
       val memorySize = Sizeof.LONG*keys.length
-      cudaMalloc(dkeys, memorySize);
+      cudaMalloc(dkeys, memorySize)
       cudaMemcpy(dkeys, Pointer.to(keys), memorySize, cudaMemcpyKind.cudaMemcpyHostToDevice);
       CUMACH.minImpurity(dkeys, dcountsM.data, doutvM.data, doutfM.data, doutgM.data, doutcM.data, djcM.data, dfieldlensM.data, outv.nrows, ncats, outv.ncols, fnum)
       outv <-- doutvM; 
       outf <-- doutfM; 
       outg <-- doutgM; 
       outc<-- doutcM;
-      dcountsM.free; doutvM.free; doutfM.free; doutgM.free; doutcM.free; dfieldlensM.free
+      dcountsM.free; doutvM.free; doutfM.free; doutgM.free; doutcM.free; dfieldlensM.free; djcM.free
       cudaFree(dkeys)
     } else {
       minImpurity(keys, cnts, outv, outf, outg, outc, jc, fieldlens, ncats, fnum)
@@ -319,8 +338,8 @@ object RandForest {
       val nodeImpty = imptyFns.result(acct, tott);
       
       var lastival = -1
-      var minImpty = Float.MaxValue
-      var lastImpty = Float.MaxValue
+      var minImpty = 1e7f // Float.MaxValue
+      var lastImpty = 1e7f // Float.MaxValue
       var partv = -1
       var besti = -1
       acc = 0;
@@ -328,6 +347,10 @@ object RandForest {
       j = jci;
       while (j < jcn) {                   // Then incrementally update top and bottom impurities and find min total 
         val key = keys(j)
+        // val ITree = 0; val INode = 1; val JFeat = 2; val IFeat = 3; val IVFeat = 4; val ICat = 5
+        // println("ITree: " + extractField(ITree, key, fieldshifts, fieldmasks) + " INode: " + extractField(INode, key, fieldshifts, fieldmasks) +
+        //   " JFeat: " + extractField(JFeat, key, fieldshifts, fieldmasks) + " IFeat: " + extractField(IFeat, key, fieldshifts, fieldmasks) + 
+        //   " IVFeat: " + extractField(IVFeat, key, fieldshifts, fieldmasks) + " ICat: " + extractField(ICat, key, fieldshifts, fieldmasks))
         val cnt = cnts(j)
         val ival = extractField(IVFeat, key, fieldshifts, fieldmasks);
         val icat = extractField(ICat, key, fieldshifts, fieldmasks);
@@ -339,7 +362,7 @@ object RandForest {
         tot += cnt;
         acc += imptyFns.update(newcnt) - imptyFns.update(oldcnt);
         acct += imptyFns.update(newcntt) - imptyFns.update(oldcntt);
-        val impty = imptyFns.result(acc, tot) + imptyFns.result(acct, tott - tot)
+        val impty = (tot *1f/tott)*imptyFns.result(acc, tot) + ((tott - tot) *1f/tott)*imptyFns.result(acct, tott - tot)
 //        if (i==0) println("scala pos %d impty %f icat %d cnts %d %d cacc %f %d" format (j, impty,  icat, oldcnt, newcnt, acc, tot))
         if (ival != lastival) {
           if (lastImpty < minImpty) { 
@@ -352,19 +375,26 @@ object RandForest {
         lastImpty = impty;
         j += 1;
       }
-      println("i: " + i)
       outv(i) = partv;
       outg(i) = nodeImpty - minImpty;
       outf(i) = besti
       outc(i) = imaxcnt
       i += 1;
     }
+    // println("outv")
+    // println(outv)
+    // println("outg")
+    // println(outg)
+    // println("outf")
+    // println(outf)
+    // println("outc")
+    // println(outc)
   }
 
   def updateTreeData(packedVals : Array[Long], fL : IMat, ncats : Int, tMI : IMat, d : Int, isLastIteration : Boolean,
       FieldMaskRShifts : IMat, FieldMasks : IMat) = {
     val n = packedVals.length
-    val dnodes = (math.pow(2, d).toInt - 1)
+    val nnodes = (math.pow(2, d).toInt)
     var bgain = NegativeInfinityF; var bthreshold = NegativeInfinityI; var brfeat = -1;
     val catCounts = fL.zeros(1, ncats);
     val catCountsSoFar = fL.zeros(1, ncats);
@@ -420,11 +450,11 @@ object RandForest {
         i = inext
 
         if (i == n || extractAbove(INode, packedVals(i), FieldMaskRShifts) != uinode) {
-          tMI(0, (itree * dnodes) + inode) = brfeat
-          tMI(1, (itree * dnodes) + inode) = bthreshold
-          tMI(2, (itree * dnodes) + inode) = bCat(0)
+          tMI(0, (itree * nnodes) + inode) = brfeat
+          tMI(1, (itree * nnodes) + inode) = bthreshold
+          tMI(2, (itree * nnodes) + inode) = bCat(0)
           if (isLastIteration || bgain <= 0f) {
-            tMI(3, (itree * dnodes) + inode) = 1
+            tMI(3, (itree * nnodes) + inode) = 1
           }
           bgain = NegativeInfinityF; bthreshold = NegativeInfinityI; brfeat = -1;
         }
@@ -468,28 +498,62 @@ object RandForest {
     impurity
   }
 
+  // val treesMetaInt = fdata.izeros(4, (ntrees * nnodes)) // irfeat, threshold, cat, isLeaf
+  // treesMetaInt(2, 0->treesMetaInt.ncols) = (ncats) * iones(1, treesMetaInt.ncols)
+  // treesMetaInt(3, 0->treesMetaInt.ncols) = (-1) * iones(1, treesMetaInt.ncols)
+  def updateTreeDataa(outv : IMat, outf : IMat, outg : FMat, outc : IMat, treeData : IMat, fL : IMat) {
+    val (maxgs, bestSamps) : (FMat, IMat) = maxi2(outg , 1)
+    val toUpdateMask = IMat(maxgs > -1e7f)
+    // val toUpdateInds = inds *@ toUpdateMask
+    // treeData    
+    var c = 0
+    while (c < outg.ncols) {
+      var bestg = -1e7; var bestf = -1; var bestv = -1; var bestc = -1 
+      var r = 0
+      while (r < outg.nrows) {
+        if (outg(r, c) > bestg) {
+          bestg = outg(r, c)
+          bestf = outf(r, c)
+          bestv = outv(r, c)
+          bestc = outc(r, c)
+        }
+        r += 1
+      }
+      if (bestg != -1e7) {
+          treeData(2, c) = bestc
+          if (bestg > 0f) {
+            treeData(0, c) = bestf
+            treeData(1, c) = bestv
+          } else {
+            treeData(3, c) = 1
+          }
+        }
+      c += 1
+    }
+    println("treeData")
+    println(treeData)
+  }
 
   def treeSteps(tn : IMat, fd : FMat, fL : IMat, tMI : IMat, depth : Int, ncats : Int, isLastIteration : Boolean)  {
-    val dnodes = (math.pow(2, depth).toInt - 1)
+    val nnodes = (math.pow(2, depth).toInt)
     val nfeats = fd.nrows
     val nitems = fd.ncols
     val ntrees = tn.nrows
-    val nifeats = math.pow(2, fL(IVFeat)) - 1
     var icol = 0
     while (icol < nitems) {
       var itree = 0
       while (itree < ntrees) {
         val inode = tn(itree, icol)
         if (isLastIteration) {
-          val cat = tMI(2, itree * dnodes + inode)
+          val cat = tMI(2, itree * nnodes + inode)
           tn(itree, icol) = math.min(cat, ncats)
-        } else if (tMI(3, itree * dnodes + inode) > 0) {
+        } else if (tMI(3, itree * nnodes + inode) > 0) {
           // Do nothing
         } else {
-          val ifeat : Int = tMI(0, itree * dnodes + inode)
+          val ifeat : Int = tMI(0, itree * nnodes + inode)
           val vfeat : Float = fd(ifeat, icol)
-          val ivfeat = vfeat //math.min(nifeats, math.floor((vfeat - fb(ifeat,0))/(fb(ifeat,1) - fb(ifeat,0))*nifeats).toInt)
-          val ithresh = tMI(1, itree * dnodes + inode)
+          val ivfeat = vfeat
+          val ithresh = tMI(1, itree * nnodes + inode)
           if (ivfeat > ithresh) {
             tn(itree, icol) = 2 * tn(itree, icol) + 2
           } else {
@@ -514,6 +578,11 @@ object RandForest {
   def scaleFD(fd : FMat, fb : FMat, nifeats : Int) : IMat = {
     val scaleFactor = (fd - fb(?, 0)) / max(1e-4f, (fb(?, 1) - fb(?, 0)))
     IMat(min(nifeats, scaleFactor * nifeats))
+  }
+
+  def scaleFDD(fd : Mat, fb : Mat, nifeats : Int) : Mat = {
+    val scaleFactor = (fd - fb(?, 0))/ max(1e-4f, (fb(?, 1) - fb(?, 0)))
+    min(nifeats, scaleFactor * nifeats)
   }
 
   // expects a to be n * t

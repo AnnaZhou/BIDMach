@@ -24,6 +24,7 @@ class RandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps : 
 
 	var fbounds : Mat = mini(fdata, 2) \ maxi(fdata, 2)
 	var fieldLengths : Mat = fdata.iones(1, 5)
+	// def packFields(itree:Int, inode:Int, irfeat:Int, ivfeat:Int, icat:Int, fieldlengths:IMat):Long
 	val itree = (Math.log(ntrees)/ Math.log(2)).toInt + 1; val inode = depth + 1; 
 	val irfeat = (Math.log(fdata.nrows)/ Math.log(2)).toInt + 1; // TODO? errr.... not sure about this.....
 	val ncats = cats.nrows
@@ -37,6 +38,7 @@ class RandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps : 
 	treesMetaInt(2, 0->treesMetaInt.ncols) = (ncats) * iones(1, treesMetaInt.ncols)
 	treesMetaInt(3, 0->treesMetaInt.ncols) = (-1) * iones(1, treesMetaInt.ncols)
 
+	// Shifts and then masks
 	var FieldMaskRShifts : Mat = null;  var FieldMasks : Mat = null
 	(fieldLengths) match {
 		case (fL : IMat) => {
@@ -45,22 +47,50 @@ class RandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps : 
 	}
 	
 	def train {
+		// def treePack(fdata:FMat, fbounds:FMat, treenodes:IMat, cats:SMat, nsamps:Int, fieldLengths:IMat)
 		var totalTrainTime = 0f
 		(fdata, fbounds, treenodes, cats, nsamps, fieldLengths, treesMetaInt, depth, FieldMaskRShifts, FieldMasks) match {
 			case (fd : FMat, fb : FMat, tn : IMat, cts : SMat, nsps : Int, fL : IMat, tMI : IMat, d : Int, fMRS : IMat, fM : IMat) => {
 				var d = 0
 				while (d <  depth) {
 					println("d: " + d)
+					flip
 					val treePacked : Array[Long] = RForest.treePack(fd, fb, tn, cts, nsps, fL)
+					val (flop1, time1) = gflop
+					totalTrainTime+=time1
+					println("treePacked: " + time1)
+					
+					println("treePacked.length: " + treePacked.length)
+					println("treePacked bytes: " + treePacked.length * Sizeof.LONG)
+					flip
 					RForest.sortLongs(treePacked, useGPU)
+					val (flop2, time2) = gflop
+					println("sortLongs GPU: FLOPS: " + flop2 + " TIME: " + time2)
+					totalTrainTime+=time2
+
+					flip
+					RForest.sortLongs(treePacked, !useGPU)
+					val (flop5, time5) = gflop
+					println("sortLongs CPU: FLOPS: " + flop5 + " TIME: " + time5)
+
+
+					flip
 					RForest.updateTreeData(treePacked, fL, ncats, tMI, depth, d == (depth - 1), fMRS, fM)
+					val (flop3, time3) = gflop
+					println("updateTreeData: " + time3)
+					totalTrainTime+=time3
 					if (!(d == (depth - 1))) {
+						flip
 						RForest.treeSteps(tn , fd, fb, fL, tMI, depth, ncats, false)
+						val (flop4, time4) = gflop
+						println("treeSteps: " + time4)
+						totalTrainTime+=time4
 					}
 					d += 1
 				}
 			}
 		}
+		println("TotalTrainTime: " + totalTrainTime)
 	}
 
 	// returns 1 * n
@@ -73,7 +103,17 @@ class RandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps : 
 				RForest.treeSearch(tnc, tfd, fb, fL, tMI, depth, ncts)
 			}
 		}
+		val (flop1, time1) = gflop
+		println("treeSearch: " + time1)
+		totalClassifyTime+=time1
+		println(treenodecats.t)
+		flip
 		val out = RForest.voteForBestCategoriesAcrossTrees(treenodecats.t, ncats) // ntrees * n
+		val (flop2, time2) = gflop
+		println("voteForBestCategoriesAcrossTrees: " + time2)
+		totalClassifyTime+=time2
+		println(treenodecats.t)	
+		println("totalClassifyTime: " + totalClassifyTime)	
 		out
 	}
 

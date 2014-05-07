@@ -1,9 +1,7 @@
 import edu.berkeley.bid.CUMAT
 import BIDMach.models.NewRandomForest
 import BIDMach.models.RandomForest
-// import BIDMach.models.DevelNewRandomForest
 import BIDMach.models.RandForest
-
 
 
 class testHashNewRandomForest {
@@ -28,9 +26,9 @@ class testHashNewRandomForest {
 
 		val fdata : Mat =  FMat(x.t) // nfeats x n
 		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y.t));  //ncats x n
-		val ntrees : Int = 60
+		val ntrees : Int = 64
 		val depth : Int = 13
-		val nsamps : Int = ((fdata.nrows * 2f)/3f).toInt
+		val nsamps : Int = 32 //((fdata.nrows * 2f)/3f).toInt
 		val useGPU : Boolean = true
 		val rF = new NewRandomForest(fdata, cats, ntrees, depth, nsamps, useGPU)
 		rF
@@ -76,10 +74,10 @@ class testHashNewRandomForest {
 
 		val fdata : Mat =  FMat(x) // nfeats x n
 		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y.t));  //ncats x n
-		val ntrees : Int = 1
-		val depth : Int = 11
-		val nsamps : Int = ((fdata.nrows * 2f)/3f).toInt
-		val useGPU : Boolean = true
+		val ntrees : Int = 4
+		val depth : Int = 13
+		val nsamps : Int = 512 // ((fdata.nrows * 2f)/3f).toInt
+		val useGPU : Boolean = false
 		val rF = new NewRandomForest(fdata, cats, ntrees, depth, nsamps, useGPU)
 		rF
 	}
@@ -91,6 +89,9 @@ class testHashNewRandomForest {
 	 * T: 4 D: 13 = 0.9325 (Train Time Seconds: 204.421, Test Time Seconds: 0.141) with just sorting on GPU
 	 * T: 5 D: 13 = 0.93680
 	 * T: 10 D: 13 = 0.95010 (Train Time Seconds: 1153.413) (Test Time Seconds: 0.126)
+	 * 
+	 * New Version with treepack and sort on GPU: 
+	 * T: 4 D: 11: 0.9218 Train Time Seconds: 128.645 Test Time Seconds: 0.203
 	 ****/
 	def testTrain2 : Int = {
 		val rF = prepTreeForTrain2
@@ -210,20 +211,20 @@ class testHashNewRandomForest {
 	}
 
 
-	// def testMaskAndShifts : Int = {
-	// 	val fL = 1\3\1\2\2
-	// 	val FieldMaskRShifts = RForest.getFieldMaskRShifts(fL); 
-	// 	val FieldMasks = RForest.getFieldMasks(fL)
-	// 	val eFieldMaskRShifts = 8\5\4\2\0
-	// 	val eFieldMasks = 1\7\1\3\3
-	// 	println("Result Shifts: " + FieldMaskRShifts + " Masks: " + FieldMasks)
-	// 	println("Expected Shifts: " + eFieldMaskRShifts + " Masks: " + eFieldMasks)
-	// 	if (isAccurate(FieldMaskRShifts, eFieldMaskRShifts) && isAccurate(FieldMasks, eFieldMasks)) {
-	// 		1
-	// 	} else {
-	// 		0
-	// 	}
-	// }
+	def testMaskAndShifts : Int = {
+		val fL = 1\3\1\2\2
+		val FieldMaskRShifts = RandForest.getFieldShifts(fL); 
+		val FieldMasks = RandForest.getFieldMasks(fL)
+		val eFieldMaskRShifts = 8\5\4\2\0
+		val eFieldMasks = 1\7\1\3\3
+		println("Result Shifts: " + FieldMaskRShifts + " Masks: " + FieldMasks)
+		println("Expected Shifts: " + eFieldMaskRShifts + " Masks: " + eFieldMasks)
+		if (isAccurate(FieldMaskRShifts, eFieldMaskRShifts) && isAccurate(FieldMasks, eFieldMasks)) {
+			1
+		} else {
+			0
+		}
+	}
 
 	def testScaleFD : Int = {
 		 // def scaleFD(fd : FMat, fb : FMat) 
@@ -290,7 +291,7 @@ class testHashNewRandomForest {
 		RandForest.findBoundariess(outCPU, gpuBounds, 0, true)
 		print(gpuBounds)
 
-		if (isAccurate(gpuBounds, cpuBounds)) {
+		if (isAccurate(cpuBounds, gpuBounds)) {
 			1
 		} else {
 			0
@@ -304,8 +305,8 @@ class testHashNewRandomForest {
 
 	def testMinImpurity : Int = {
 		val x = FMat(1\2\3\4 on 4\7\5\4 on 8\1\6\7)
-		val y = IMat(1\0\1\0)
-		val numCats = 2;
+		val y = IMat(3\1\3\1)
+		val numCats = 4;
 		val n = x.ncols
 
 		val fdata : Mat =  IMat(x) // nfeats x n
@@ -316,17 +317,25 @@ class testHashNewRandomForest {
 				println("cts.jc: " + cts.jc.deep.mkString(" "))
 			}
 		}
-		val treenodes = IMat(2\2\3\4)
-		val fieldlengths = 1\3\3\3\3\1
-		val nsamps = 3
-		val nnodes = 7
-		val ncats = 2
-		val ntrees = 1
+		val treenodes = IMat(2\2\3\3)
+		val fieldlengths = 1\2\2\2\2\2
+		// val nsamps = 3
+		// val nnodes = 7
+		// val ncats = 2
+		// val ntrees = 1
+
+		val ntrees = 1 << fieldlengths(0)
+		val nnodes = 1 << fieldlengths(1)
+		val nsamps = 1 << fieldlengths(2)
+		val nrows = 1 << fieldlengths(3)
+		val nvals = 1 << fieldlengths(4)
+		val ncats = 1 << fieldlengths(5)
+
 		val outCPU : Array[Long] = RandForest.treePackk(fdata, treenodes, cats, nsamps, fieldlengths, false)
 		println("CPU: " + outCPU.deep.mkString(" "))
 		RandForest.sortLongs(outCPU, true)
-		val gpuBounds = x.izeros(1, 1 << (7))
-		RandForest.findBoundariess(outCPU, gpuBounds, 7, false)
+		val gpuBounds = x.izeros(1, nsamps*ntrees*nnodes+1)
+		RandForest.findBoundariess(outCPU, gpuBounds, fieldlengths(5) + fieldlengths(4) + fieldlengths(3), false)
 		val c = RandForest.countC(outCPU)
 		val inds = new Array[Long](c)
 		val indsCounts = new Array[Float](c)
@@ -334,25 +343,41 @@ class testHashNewRandomForest {
 
 		val coutv = IMat(x.izeros(nsamps, ntrees * nnodes)) // TODO: think about number of trees?
 		val coutf = IMat(x.izeros(nsamps, ntrees * nnodes))
-		val coutg = x.zeros(nsamps, ntrees * nnodes)
+		val coutg = FMat(x.zeros(nsamps, ntrees * nnodes))
 		val coutc = IMat(x.izeros(nsamps, ntrees * nnodes))
-		RandForest.minImpurityy(inds, IMat(new FMat(indsCounts.length, 1, indsCounts)), coutv, coutf, coutg, coutc, gpuBounds, fieldlengths, ncats, 0, true)
+		RandForest.minImpurityy(inds, IMat(new FMat(indsCounts.length, 1, indsCounts)), coutv, coutf, coutg, coutc, gpuBounds, fieldlengths, ncats, 0, false)
 		val goutv = IMat(x.izeros(nsamps, ntrees * nnodes)) // TODO: think about number of trees?
 		val goutf = IMat(x.izeros(nsamps, ntrees * nnodes))
-		val goutg = x.izeros(nsamps, ntrees * nnodes)
+		val goutg = FMat(x.izeros(nsamps, ntrees * nnodes))
 		val goutc = IMat(x.izeros(nsamps, ntrees * nnodes))
 		RandForest.minImpurityy(inds, IMat(new FMat(indsCounts.length, 1, indsCounts)), goutv, goutf, goutg, goutc, gpuBounds, fieldlengths, ncats, 0, true)
-		if (isAccurate(coutv, goutv) && isAccurate(coutf, goutf) && isAccurate(coutg, goutg) && isAccurate(coutc, goutc)) {
-			1
-		} else {
-			0
-		}
+		println("-----------------")
+		println("outv")
+		isAccurate(goutv, coutv);
+		println("outf")
+		isAccurate(goutf, coutf);
+		println("outg")
+		isAccurate(goutg, coutg);
+		println("outc")
+		isAccurate(goutc, coutc);
+		println(maxi2(goutg, 1))
+		println("-----------------")
+		// if (isAccurate(coutv, goutv) && isAccurate(coutf, goutf) && isAccurate(coutg, goutg) && isAccurate(coutc, goutc)) {
+		// 	1
+		// } else {
+		// 	0
+		// }
+		0
 	}
 
 	// def treePackk(sfdata : Mat, treenodes : Mat, cats : Mat, nsamps : Int, fieldlengths: Mat, useGPU : Boolean) : Array[Long] = {
  //    (sfdata, treenodes, cats, nsamps, fieldlengths, useGPU)
  	def testTreePackk : Int = {
- 		val x = FMat(1\2\3\4 on 4\7\8\9 on 8\1\12\15)
+ 		// val ITree = 0; val INode = 1; val JFeat = 2; val IFeat = 3; val IVFeat = 4; val ICat = 5
+		val fieldlengths = 0\2\1\2\4\1
+
+
+ 		val x = FMat(1\2\3\4 on 4\7\8\9 on 8\1\12\15 on 4\1\2\3)
 		val y = IMat(1\0\1\0)
 		val numCats = 2;
 		val n = x.ncols
@@ -366,14 +391,14 @@ class testHashNewRandomForest {
 			}
 		}
 		
-		val treenodes = IMat(2\2\3\4)
-		val fieldlengths = 5\5\5\5\5\5
-		val nsamps = 3
-		val outCPU : Array[Long] = RandForest.treePackk(fdata,treenodes, cats, 3, fieldlengths, false)
-		println("CPU: " + outCPU.deep.mkString(" "))
-		val outGPU : Array[Long] = RandForest.treePackk(fdata,treenodes, cats, 3, fieldlengths, true)
+		val treenodes = IMat(2\2\3\3)
+		// ntree, nodes, nsamps, 
+		val nsamps = 1 << fieldlengths(JFeat)
+		val outGPU : Array[Long] = RandForest.treePackk(fdata,treenodes, cats, nsamps, fieldlengths, true)
 		println("GPU: " + outGPU.deep.mkString(" "))
-
+		val outCPU : Array[Long] = RandForest.treePackk(fdata,treenodes, cats, nsamps, fieldlengths, false)
+		println("CPU: " + outCPU.deep.mkString(" "))
+	
 		val FieldMaskRShifts =  RandForest.getFieldShifts(fieldlengths)
 		val FieldMasks =  RandForest.getFieldMasks(fieldlengths)
 		var i = 0
@@ -436,15 +461,14 @@ class testHashNewRandomForest {
 
 val t = new testHashNewRandomForest
 // t.prepTreeForTrain2
+// t.testTrain1
 // t.testTrain2
-// t.testDevelTrain2
 // t.testRandForestGetFieldShifts
 // t.testScaleFD
 // t.testScaleFDInForest
 // t.testSort
 // t.testCountC
 // t.testCountCAndMakeC
-// t.testTrain1
 // t.testExtractField
 // t.testExtractAbove
 // t.testPackFieldsAndExtract
