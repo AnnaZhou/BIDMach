@@ -39,9 +39,6 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 	val n = fdata.ncols
 	val treenodes = fdata.izeros(ntrees, fdata.ncols)
 	val nnodes = (math.pow(2, depth).toInt)
-	val treesMetaInt = fdata.izeros(4, (ntrees * nnodes)) // irfeat, threshold, cat, isLeaf
-	treesMetaInt(2, 0->treesMetaInt.ncols) = (ncats) * iones(1, treesMetaInt.ncols)
-	treesMetaInt(3, 0->treesMetaInt.ncols) = (-1) * iones(1, treesMetaInt.ncols)
 	val treesMetaInt2 = fdata.izeros(4, (ntrees * nnodes)) // irfeat, threshold, cat, isLeaf
 	treesMetaInt2(2, 0->treesMetaInt2.ncols) = (ncats) * iones(1, treesMetaInt2.ncols)
 	treesMetaInt2(3, 0->treesMetaInt2.ncols) = (-1) * iones(1, treesMetaInt2.ncols)
@@ -53,18 +50,14 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 	(fieldLengths, fdata, fbounds) match {
 		case (fL : IMat, fd : FMat, fb : FMat) => {
 			// FieldMaskRShifts = RForest.getFieldMaskRShifts(fL); FieldMasks = RForest.getFieldMasks(fL)
-			println("fd prescale")
-			println(fd)
 			sFData = RandForest.scaleFD(fd, fb, math.pow(2, fL(IVFeat)).toInt - 1)
-			println("fd postscale")
-			println(sFData)
 		}
 	}
 	
 	def train {
 		var totalTrainTime = 0f
-		(sFData, treenodes, cats, nsamps, fieldLengths, treesMetaInt, depth) match {
-			case (sfd : IMat, tn : IMat, cts : SMat, nsps : Int, fL : IMat, tMI : IMat, d : Int) => {
+		(sFData, treenodes, cats, nsamps, fieldLengths, treesMetaInt2, depth) match {
+			case (sfd : IMat, tn : IMat, cts : SMat, nsps : Int, fL : IMat, tMI2 : IMat, d : Int) => {
 				var d = 0
 				while (d <  depth) {
 					println("d: " + d)
@@ -76,11 +69,8 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 					val inds = new Array[Long](c)
 					val indsCounts = new Array[Float](c)
 					RandForest.makeC(treePacked, inds, indsCounts)
-					// RandForest.updateTreeData(treePacked, fL, ncats, tMI, depth, d == (depth - 1), RandForest.getFieldShifts(fL), RandForest.getFieldMasks(fL))
-					// println("tMI correct")
-					// println(tMI)
-					// def findBoundaries(keys:Array[Long], jc:IMat, shift:Int)
-					
+
+					// def findBoundaries(keys:Array[Long], jc:IMat, shift:Int)				
 					val jccc = sfd.izeros(1, nnodes * ntrees * nsamps + 1)
 					RandForest.findBoundariess(inds, jccc, RandForest.getFieldShifts(fL)(JFeat), true)
 					
@@ -88,31 +78,12 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 					val outf = IMat(sfd.izeros(nsamps, ntrees * nnodes))
 					val outg = FMat(sfd.zeros(nsamps, ntrees * nnodes))
 					val outc = IMat(sfd.izeros(nsamps, ntrees * nnodes))
-					RandForest.minImpurityy(inds, IMat(new FMat(indsCounts.length, 1, indsCounts)), outv, outf, outg, outc, jccc, fL, ncats, 0, false)
+					RandForest.minImpurityy(inds, IMat(new FMat(indsCounts.length, 1, indsCounts)), outv, outf, outg, outc, jccc, fL, ncats, 0, true)
+
+					RandForest.updateTreeDataa(outv, outf, outg, outc, tMI2, fL)
 					
-					val goutv = IMat(sfd.izeros(nsamps, ntrees * nnodes))
-					val goutf = IMat(sfd.izeros(nsamps, ntrees * nnodes))
-					val goutg = FMat(sfd.zeros(nsamps, ntrees * nnodes))
-					val goutc = IMat(sfd.izeros(nsamps, ntrees * nnodes))
-					RandForest.minImpurityy(inds, IMat(new FMat(indsCounts.length, 1, indsCounts)), goutv, goutf, goutg, goutc, jccc, fL, ncats, 0, true)
-
-					println("outv")
-					isAccurate(goutv, outv);
-					println("outf")
-					isAccurate(goutf, outf);
-					println("outg")
-					isAccurate(goutg, outg);
-					println("outc")
-					isAccurate(goutc, goutc);
-
-					(treesMetaInt2) match {
-						case (tMI2 : IMat) => {
-							RandForest.updateTreeDataa(outv, outf, outg, outc, tMI2, fL)
-							// isAccurate(tMI2, tMI)
-							if (!(d == (depth - 1))) {
-								RandForest.treeSteps(tn , sfd, fL, tMI2, depth, ncats, false)
-							}
-						}
+					if (!(d == (depth - 1))) {
+						RandForest.treeStepss(tn , sfd, fL, tMI2, depth, ncats, false, false)
 					}
 					d += 1
 				}

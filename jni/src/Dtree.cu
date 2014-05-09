@@ -292,7 +292,7 @@ __global__ void __minImpuritya(long long *keys, int *counts, int *outv, int *out
       ctot += cnt;                                          // Now update the total c and total ci log ci sums
       cacc += update;
       cact += updatet;
-      impty = T::fresult(cacc, ctot) + T::fresult(cact, ctotall-ctot); // And the impurity for this input
+      impty = ( ((float) ctot)/ctotall) * T::fresult(cacc, ctot) + (((float)(ctotall-ctot))/ctotall) * T::fresult(cact, ctotall-ctot); // And the impurity for this input
       //      if (i == 0) printf("cuda pos %d impty %f icat %d cnts %d %d cacc %f %d\n", j + threadIdx.x, impty, icat, cold, cnew, cacc, ctot);
 
       tmp = __shfl_up(ival, 1);                             // Need the last impurity and ival in order

@@ -74,8 +74,8 @@ class testHashNewRandomForest {
 
 		val fdata : Mat =  FMat(x) // nfeats x n
 		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y.t));  //ncats x n
-		val ntrees : Int = 4
-		val depth : Int = 13
+		val ntrees : Int = 2
+		val depth : Int = 11
 		val nsamps : Int = 512 // ((fdata.nrows * 2f)/3f).toInt
 		val useGPU : Boolean = false
 		val rF = new NewRandomForest(fdata, cats, ntrees, depth, nsamps, useGPU)
@@ -92,6 +92,10 @@ class testHashNewRandomForest {
 	 * 
 	 * New Version with treepack and sort on GPU: 
 	 * T: 4 D: 11: 0.9218 Train Time Seconds: 128.645 Test Time Seconds: 0.203
+	 *
+	 * New Version with Treepack and sort and minimpurity on GPU (but not completely on GPU)
+	 * T: 4 D: 13: 0.9305 Train Time Seconds: 80.015, Test time Seconds: 0.205 Seconds
+	 * T: 2 D: 11: 0.8735 Train Time Seconds: 33.303 Test time Seconds: 0.291 Seconds
 	 ****/
 	def testTrain2 : Int = {
 		val rF = prepTreeForTrain2
@@ -465,8 +469,8 @@ class testHashNewRandomForest {
 
 val t = new testHashNewRandomForest
 // t.prepTreeForTrain2
-t.testTrain1
-// t.testTrain2
+// t.testTrain1
+t.testTrain2
 // t.testRandForestGetFieldShifts
 // t.testScaleFD
 // t.testScaleFDInForest

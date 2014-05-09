@@ -22,4 +22,4 @@ int minImpurity(long long *keys, int *counts, int *outv, int *outf, float *outg,
 
 int findBoundaries(long long *keys, int *jc, int n, int njc, int shift);
 
-int treesteps(int *trees, int *feats, int *tpos, int *otpos, int nrows, int ncols, int ns, int tstride, int ntrees, int tdepth);
+int treesteps(int *trees, int *feats, int *tpos, int *otpos, int nrows, int ncols, int ns, int tstride, int ntrees, int tdepth, int isLastIteration);

@@ -72,16 +72,25 @@ object RandForest {
   }
 
   def sortLongs(a:Array[Long], useGPU : Boolean) {
-
+    println("sortLongs: Length: " + a.length + " Bytes: " + Sizeof.LONG*a.length);
     if (useGPU) {
+      tic
       val memorySize = Sizeof.LONG*a.length
       val deviceData : Pointer = new Pointer();
       cudaMalloc(deviceData, memorySize);
       cudaMemcpy(deviceData, Pointer.to(a), memorySize, cudaMemcpyKind.cudaMemcpyHostToDevice);
-      val err =  CUMAT.lsort(deviceData, a.length, 1)
+      val t1 = toc
+      println("Send to GPU time: " + t1)
+      tic
+      val err = CUMAT.lsort(deviceData, a.length, 1)
       if (err != 0) {throw new RuntimeException("lsort: CUDA kernel error in lsort " + cudaGetErrorString(err))}
+      val t2 = toc
+      println("GPU: sort time: " + t2)
+      tic
       cudaMemcpy(Pointer.to(a), deviceData, memorySize, cudaMemcpyKind.cudaMemcpyDeviceToHost);
       cudaFree(deviceData);
+      val t3 = toc
+      println("Send back to GPU time plus dealloc: " + t3)
     } else {
 
       def comp(i1 : Int, i2 : Int) : Int = {
@@ -95,8 +104,10 @@ object RandForest {
         a(i2) = a(i1)
         a(i1) = tempA
       }
-
+      tic
       quickSort(comp, swap, 0, a.length)
+      val t1 = toc
+      println("CPU: sort time: " + t3)
     }
 
   }
@@ -131,10 +142,10 @@ object RandForest {
   // }
 
   def treePackk(sfdata : Mat, treenodes : Mat, cats : Mat, nsamps : Int, fieldlengths: Mat, useGPU : Boolean) : Array[Long] = {
+    println("treePack")
     (sfdata, treenodes, cats, nsamps, fieldlengths, useGPU) match {
       case (sfd : IMat, tn : IMat, cts : SMat, ns : Int, fL : IMat, true) => {
         // treePack(Pointer id, Pointer tn, Pointer icats, Pointer jc, Pointer out, Pointer fl, int nrows, int ncols, int ntrees, int nsamps);
-        println("GPU TreePack")
         val ntrees = tn.nrows
         val out = new Array[Long](ntrees * nsamps * cts.nnz)
         val memorySize = Sizeof.LONG*out.length
@@ -147,7 +158,8 @@ object RandForest {
         val gsCatsIR = (GIMat(new IMat(cts.ir.length, 1, cts.ir) - 1).data);
         val giTreenodes = GIMat(tn)
         val gifL = GIMat(fL)
-        CUMACH.treePack(gFd.data, giTreenodes.data, gsCatsIR, gsCatsJC, deviceData, gifL.data, gFd.nrows, gFd.ncols, ntrees, ns)
+        val err = CUMACH.treePack(gFd.data, giTreenodes.data, gsCatsIR, gsCatsJC, deviceData, gifL.data, gFd.nrows, gFd.ncols, ntrees, ns)
+        if (err != 0) {throw new RuntimeException("treePack: CUDA kernel error in CUMACH.treePack " + cudaGetErrorString(err))}
         cudaMemcpy(Pointer.to(out), deviceData, memorySize, cudaMemcpyKind.cudaMemcpyDeviceToHost);
         cudaFree(deviceData);
         gFd.free; gsCats.free; giTreenodes.free; gifL.free
@@ -205,7 +217,8 @@ object RandForest {
       cudaMalloc(dkeys, memorySize);
       cudaMemcpy(dkeys, Pointer.to(keys), memorySize, cudaMemcpyKind.cudaMemcpyHostToDevice);
       val gjc = GIMat(jc)
-      CUMACH.findBoundaries(dkeys, gjc.data, keys.length, jc.length, shift)
+      val err = CUMACH.findBoundaries(dkeys, gjc.data, keys.length, jc.length, shift)
+      if (err != 0) {throw new RuntimeException("findBoundaries: CUDA kernel error in CUMACH.findBoundaries " + cudaGetErrorString(err))}
       cudaFree(dkeys)
       jc <-- gjc
       gjc.free
@@ -249,7 +262,8 @@ object RandForest {
       val memorySize = Sizeof.LONG*keys.length
       cudaMalloc(dkeys, memorySize)
       cudaMemcpy(dkeys, Pointer.to(keys), memorySize, cudaMemcpyKind.cudaMemcpyHostToDevice);
-      CUMACH.minImpurity(dkeys, dcountsM.data, doutvM.data, doutfM.data, doutgM.data, doutcM.data, djcM.data, dfieldlensM.data, outv.nrows, ncats, outv.ncols, fnum)
+      val err = CUMACH.minImpurity(dkeys, dcountsM.data, doutvM.data, doutfM.data, doutgM.data, doutcM.data, djcM.data, dfieldlensM.data, outv.nrows, ncats, outv.ncols, fnum)
+      if (err != 0) {throw new RuntimeException("minImpurity: CUDA kernel error in CUMACH.minImpurity " + cudaGetErrorString(err))}
       outv <-- doutvM; 
       outf <-- doutfM; 
       outg <-- doutgM; 
@@ -505,12 +519,12 @@ object RandForest {
     val bestInds = rows + cols * outg.nrows 
     val boutv = outv(bestInds)
     val boutf = outf(bestInds)
-    val boutc = outg(bestInds)
+    val boutc = outc(bestInds)
     var i = 0
     while (i < bestInds.length) {
       if (maxgs(i) != -1e7) {
         treesArray(1, i) = boutc(i)
-        if (bestg > 0f) {
+        if (maxgs(i) > 0f) {
           treesArray(2, i) = boutf(i)
           treesArray(0, i) = boutv(i)
         } else {
@@ -553,8 +567,8 @@ object RandForest {
         }
       c += 1
     }
-    println("treeData")
-    println(treeData)
+    // println("treeData")
+    // println(treeData)
   }
 
   def treeStepss(tn : IMat, fd : FMat, fL : IMat, tMI : IMat, depth : Int, ncats : Int, isLastIteration : Boolean, useGPU : Boolean) {
@@ -566,7 +580,10 @@ object RandForest {
         gtn.free; 
 
       } else {
+        tic
         treeSteps(tn, fd, fL, tMI, depth, ncats, isLastIteration) 
+        val t1 = toc
+        println("TreeSteps took: " + t1)
       }
   }
 
