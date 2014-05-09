@@ -160,4 +160,18 @@ extern "C" {
 
     return findBoundaries(keys, jc, n, njc, shift);
   }
+
+  JNIEXPORT jint JNICALL Java_edu_berkeley_bid_CUMACH_treeSteps
+  (JNIEnv *env, jobject obj, jobject jtrees, jobject jfeats, jobject jtpos, jobject jotpos, jint nrows, jint ncols, jint ns, jint tstride, jint ntrees, jint tdepth)
+  {
+    int *trees = (int *)getPointer(env, jtrees);
+    int *feats = (int *)getPointer(env, jfeats);
+    int *tpos = (int *)getPointer(env, jtpos);
+    int *otpos = (int *)getPointer(env, jotpos);
+
+// treesteps(int *trees, float *feats, int *tpos, int *otpos, int nrows, int ncols, int ns, int tstride, int ntrees, int tdepth)
+    return treesteps(trees, feats, tpos, otpos, nrows, ncols, ns, tstride, ntrees, tdepth);
+  }
+
+
 }

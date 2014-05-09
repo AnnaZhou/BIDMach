@@ -498,6 +498,29 @@ object RandForest {
     impurity
   }
 
+  // treeArray - 0) Threshold 1) 
+  def updateTreesArray(outv : IMat, outf : IMat, outg : FMat, outc : IMat, treesArray : IMat, fL : IMat) {
+    val (maxgs, rows) : (FMat, IMat) = maxi2(outg , 1)
+    val cols = irow(0->outg.ncols)
+    val bestInds = rows + cols * outg.nrows 
+    val boutv = outv(bestInds)
+    val boutf = outf(bestInds)
+    val boutc = outg(bestInds)
+    var i = 0
+    while (i < bestInds.length) {
+      if (maxgs(i) != -1e7) {
+        treesArray(1, i) = boutc(i)
+        if (bestg > 0f) {
+          treesArray(2, i) = boutf(i)
+          treesArray(0, i) = boutv(i)
+        } else {
+          treesArray(0, i) = -1 * boutv(i)
+        }
+      }
+      i += 1
+    }
+  }
+
   // val treesMetaInt = fdata.izeros(4, (ntrees * nnodes)) // irfeat, threshold, cat, isLeaf
   // treesMetaInt(2, 0->treesMetaInt.ncols) = (ncats) * iones(1, treesMetaInt.ncols)
   // treesMetaInt(3, 0->treesMetaInt.ncols) = (-1) * iones(1, treesMetaInt.ncols)
@@ -532,6 +555,19 @@ object RandForest {
     }
     println("treeData")
     println(treeData)
+  }
+
+  def treeStepss(tn : IMat, fd : FMat, fL : IMat, tMI : IMat, depth : Int, ncats : Int, isLastIteration : Boolean, useGPU : Boolean) {
+    if (useGPU) {
+        // CUMACH.treesteps(Pointer trees, Pointer feats, Pointer tpos, Pointer otpos, int nrows, int ncols, int ns, int tstride, int ntrees, int tdepth);
+        val gtn = GIMat(tn)
+
+        // CUMACH.treesteps(Pointer trees, Pointer feats, Pointer tpos, Pointer otpos, int nrows, int ncols, int ns, int tstride, int ntrees, int tdepth);
+        gtn.free; 
+
+      } else {
+        treeSteps(tn, fd, fL, tMI, depth, ncats, isLastIteration) 
+      }
   }
 
   def treeSteps(tn : IMat, fd : FMat, fL : IMat, tMI : IMat, depth : Int, ncats : Int, isLastIteration : Boolean)  {
@@ -595,8 +631,8 @@ object RandForest {
       }
       case (2, aMat : IMat) => {
         val iData = (icol(0->aMat.nrows) * iones(1, aMat.ncols)).data
-        val i = irow(iData)
-        val j = irow(aMat.data)
+        val i = irow(iData) // a
+        val j = irow(aMat.data) // aMat(?) creates column
         val ij = i on j
         val out = accum(ij.t, 1, null, a.nrows, scala.math.max(a.ncols, numBuckets))
         out

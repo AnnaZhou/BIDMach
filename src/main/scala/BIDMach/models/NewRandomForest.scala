@@ -90,6 +90,21 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 					val outc = IMat(sfd.izeros(nsamps, ntrees * nnodes))
 					RandForest.minImpurityy(inds, IMat(new FMat(indsCounts.length, 1, indsCounts)), outv, outf, outg, outc, jccc, fL, ncats, 0, false)
 					
+					val goutv = IMat(sfd.izeros(nsamps, ntrees * nnodes))
+					val goutf = IMat(sfd.izeros(nsamps, ntrees * nnodes))
+					val goutg = FMat(sfd.zeros(nsamps, ntrees * nnodes))
+					val goutc = IMat(sfd.izeros(nsamps, ntrees * nnodes))
+					RandForest.minImpurityy(inds, IMat(new FMat(indsCounts.length, 1, indsCounts)), goutv, goutf, goutg, goutc, jccc, fL, ncats, 0, true)
+
+					println("outv")
+					isAccurate(goutv, outv);
+					println("outf")
+					isAccurate(goutf, outf);
+					println("outg")
+					isAccurate(goutg, outg);
+					println("outc")
+					isAccurate(goutc, goutc);
+
 					(treesMetaInt2) match {
 						case (tMI2 : IMat) => {
 							RandForest.updateTreeDataa(outv, outf, outg, outc, tMI2, fL)

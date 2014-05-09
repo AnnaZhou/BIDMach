@@ -304,8 +304,8 @@ class testHashNewRandomForest {
   //     ncats:Int, fnum:Int) = {
 
 	def testMinImpurity : Int = {
-		val x = FMat(1\2\3\4 on 4\7\5\4 on 8\1\6\7)
-		val y = IMat(3\1\3\1)
+		val x = FMat(1\2\3\4 on 4\7\5\4 on 8\1\6\7 on 1\2\3\4)
+		val y = IMat(3\1\2\3)
 		val numCats = 4;
 		val n = x.ncols
 
@@ -317,12 +317,14 @@ class testHashNewRandomForest {
 				println("cts.jc: " + cts.jc.deep.mkString(" "))
 			}
 		}
-		val treenodes = IMat(2\2\3\3)
-		val fieldlengths = 1\2\2\2\2\2
-		// val nsamps = 3
-		// val nnodes = 7
-		// val ncats = 2
-		// val ntrees = 1
+		val treenodes = IMat(2\3\3\3)
+		val fieldlengths = 1\2\2\2\4\2
+		// val ntrees = 2
+		// nnodes = 4
+		// nsamps = 4
+		// nrows = 4
+		// nvals = 16
+		// val ncats = 4
 
 		val ntrees = 1 << fieldlengths(0)
 		val nnodes = 1 << fieldlengths(1)
@@ -336,6 +338,8 @@ class testHashNewRandomForest {
 		RandForest.sortLongs(outCPU, true)
 		val gpuBounds = x.izeros(1, nsamps*ntrees*nnodes+1)
 		RandForest.findBoundariess(outCPU, gpuBounds, fieldlengths(5) + fieldlengths(4) + fieldlengths(3), false)
+		println("gpuBounds")
+		println(gpuBounds)
 		val c = RandForest.countC(outCPU)
 		val inds = new Array[Long](c)
 		val indsCounts = new Array[Float](c)
@@ -461,7 +465,7 @@ class testHashNewRandomForest {
 
 val t = new testHashNewRandomForest
 // t.prepTreeForTrain2
-// t.testTrain1
+t.testTrain1
 // t.testTrain2
 // t.testRandForestGetFieldShifts
 // t.testScaleFD
@@ -477,4 +481,4 @@ val t = new testHashNewRandomForest
 // t.testTreePackk
 // t.testPackFieldsAndExtract
 // t.testFindBoundaries
-t.testMinImpurity
+// t.testMinImpurity
