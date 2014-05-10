@@ -43,7 +43,7 @@ class testHashNewRandomForest {
 		val xTest : DMat = load("../Data/bidmatSpamData.mat", "Xtest"); // ntest x nfeats
 		var yTest : DMat = load("../Data/bidmatSpamData.mat", "ytest"); // ntest x 1
 		val yGuess : Mat = rF.classify(FMat(xTest.t)) 
-		println(yGuess)
+		// println(yGuess)
 		println(calcAccuracy(yGuess, FMat(yTest.t)))
 		0
 	}
@@ -74,10 +74,10 @@ class testHashNewRandomForest {
 
 		val fdata : Mat =  FMat(x) // nfeats x n
 		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y.t));  //ncats x n
-		val ntrees : Int = 2
+		val ntrees : Int = 8
 		val depth : Int = 11
 		val nsamps : Int = 512 // ((fdata.nrows * 2f)/3f).toInt
-		val useGPU : Boolean = false
+		val useGPU : Boolean = true
 		val rF = new NewRandomForest(fdata, cats, ntrees, depth, nsamps, useGPU)
 		rF
 	}
@@ -96,24 +96,44 @@ class testHashNewRandomForest {
 	 * New Version with Treepack and sort and minimpurity on GPU (but not completely on GPU)
 	 * T: 4 D: 13: 0.9305 Train Time Seconds: 80.015, Test time Seconds: 0.205 Seconds
 	 * T: 2 D: 11: 0.8735 Train Time Seconds: 33.303 Test time Seconds: 0.291 Seconds
+	 * T: 4 D: 11: 0.9212 Train Time: 61 seconds, Test Time: 13.139 seconds?
+	 * T: 4 D: 11: 0.9212 Train Time: 26071 seconds, Test Time: 0.203 Seconds
+	 * 
+	 * Version with treepack sort on CPU; treepack run twice.
+	 * T: 8 D: 11 0.934 Train Time Seconds: 650.379 Test Time Seconds: 0.303
+	 *
+	 * Version with iterative treepack and sorting on gpu, as well as everything else
+	 * T: 8  D: 11 0.9345 Train Time Seconds: 46.983 Test Time Seconds: 0.213
+	 * T: 16 D: 11 0.9414 Train Time Seconds: 160.217 Test Time Seconds: 0.263
+	 * T: 8 D: 11 nsamps: 512  done prep tree: 2.734 / done train: 50.128 / done test: 0.215 / Accuracy 0.9345/ done calcAccuracy: 0.008
 	 ****/
 	def testTrain2 : Int = {
+		println("start prep tree")
+		tic
 		val rF = prepTreeForTrain2
-		val trainStart = System.currentTimeMillis
+		val t0 = toc
+		println("done prep tree: " + t0)
+
+		println("start train")
+		tic
 		rF.train
-		val trainDone = System.currentTimeMillis
+		val t1 = toc
+		println("done train: " + t1)
 
 		val xTest : IMat = load("../Data/digits.mat", "xTest"); // nfeats * ntest
 		val yTest : DMat = load("../Data/digits.mat", "yTest"); // ntest * 1
-		val testStart = System.currentTimeMillis
+		println("start test")
+		tic
 		val yGuess : Mat = rF.classify(FMat(xTest)) 
-		val testDone = System.currentTimeMillis
-		println(yGuess)
+		val t2 = toc
+		println("done test: " + t2)
+
+		// println(yGuess)
+		println("calcAccuracy: ")
+		tic
 		println(calcAccuracy(yGuess, FMat(yTest.t)))
-		val trainTime = (trainDone - trainStart)/1000f
-		val testTime = (testDone- testStart)/1000f
-		println("Train Time Seconds: " +  trainTime)
-		println("Test Time Seconds: " +  testTime)
+		val t3 = toc
+		println("done calcAccuracy: " + t3)
 		0
 	}
 
@@ -434,14 +454,37 @@ class testHashNewRandomForest {
 		1
  	}
 
+ 	// TODO: asdfasfsad
+ 	def treePackAndSort : Int = {
+ 		val fieldlengths = 0\2\1\2\4\1
+ 		val x = FMat(1\2\3\4 on 4\7\8\9 on 8\1\12\15 on 4\1\2\3)
+		val y = IMat(1\0\1\0)
+		val numCats = 2;
+		val n = x.ncols
+		val fdata : Mat =  IMat(x) // nfeats x n
+		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y));
+		(cats) match {
+			case (cts : SMat) => {
+				println("cts.ir: " + cts.ir.deep.mkString(" "))
+				println("cts.jc: " + cts.jc.deep.mkString(" "))
+			}
+		}
+		val treenodes = IMat(2\2\3\3)
+		// ntree, nodes, nsamps, 
+		val nsamps = 1 << fieldlengths(JFeat)
+		val outGPU : Array[Long] = RandForest.treePackk(fdata,treenodes, cats, nsamps, fieldlengths, true)
+		println("GPU: " + outGPU.deep.mkString(" "))
+		0
+ 	}
+
 	/********************************************************/
 	/*********************** HELPERS ************************/
 	/********************************************************/
 	def calcAccuracy(guess : Mat , actual : Mat) : Float = {
-		println("guess")
-		println(guess)
-		println("actual")
-		println(actual)
+		// println("guess")
+		// println(guess)
+		// println("actual")
+		// println(actual)
 		val accuracyThreshold = 10E-7
 		var correctness : Mat = null
 		(guess) match {
@@ -452,8 +495,8 @@ class testHashNewRandomForest {
 				correctness = ((guess - actual) < accuracyThreshold)
 			}
 		}
-		println("correctness")
-		println(correctness)
+		// println("correctness")
+		// println(correctness)
 		val summed1 = sum(correctness, 1)
 		val summed2 = sum(summed1, 2)
 		return FMat(summed2)(0,0) / (correctness.length.toFloat)
@@ -461,7 +504,7 @@ class testHashNewRandomForest {
 
 	def isAccurate(guess : Mat , actual : Mat) : Boolean = {
 		val accuracy = calcAccuracy(guess, actual) 
-		println("accuracy: " + accuracy)
+		// println("accuracy: " + accuracy)
 		accuracy == 1.0f
 	}
 

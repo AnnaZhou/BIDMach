@@ -34,8 +34,9 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 	val ncats = cats.nrows
 	var icat : Int = (Math.log(ncats)/ Math.log(2)).toInt + 1 // todo fix mat element access
 
-	val ivfeat = Math.min(10,  64 - itree - inode - jfeat - ifeat - icat); 
+	val ivfeat = Math.min(10, 64 - itree - inode - jfeat - ifeat - icat); 
 	fieldLengths <-- (itree\inode\jfeat\ifeat\ivfeat\icat) 
+	// println("fieldLengths: " + fieldLengths)
 	val n = fdata.ncols
 	val treenodes = fdata.izeros(ntrees, fdata.ncols)
 	val nnodes = (math.pow(2, depth).toInt)
@@ -60,15 +61,33 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 			case (sfd : IMat, tn : IMat, cts : SMat, nsps : Int, fL : IMat, tMI2 : IMat, d : Int) => {
 				var d = 0
 				while (d <  depth) {
-					println("d: " + d)
+					// println("d: " + d)
 					val jc : IMat = null
 					// treePackk(sfdata : Mat, treenodes : Mat, cats : Mat, nsamps : Int, fieldlengths: Mat, useGPU : Boolean)
-					val treePacked : Array[Long] = RandForest.treePackk(sfd, tn, cts, nsps, fL, useGPU) // useGPU
-					RandForest.sortLongs(treePacked, true)
-					val c = RandForest.countC(treePacked)
-					val inds = new Array[Long](c)
-					val indsCounts = new Array[Float](c)
-					RandForest.makeC(treePacked, inds, indsCounts)
+					
+					// val treePacked : Array[Long] = RandForest.treePackk(sfd, tn, cts, nsps, fL, useGPU) // useGPU
+					// RandForest.sortLongs(treePacked, true)
+					// val c = RandForest.countC(treePacked)
+					// val inds = new Array[Long](c)
+					// val indsCounts = new Array[Float](c)
+					// RandForest.makeC(treePacked, inds, indsCounts)
+					val (inds, indsCounts) = RandForest.treePackAndSort(sfd, tn, cts, nsps, fL, true)
+					// val treePacked : Array[Long] = RandForest.treePackk(sfd, tn, cts, nsps, fL, false) // useGPU
+					// RandForest.sortLongs(treePacked, false)
+					// val c = RandForest.countC(treePacked)
+					// val cinds = new Array[Long](c)
+					// val cindsCounts = new Array[Float](c)
+					// RandForest.makeC(treePacked, cinds, cindsCounts)
+					// println("cinds.length: " + cinds.length)
+					// println("cindsCounts.length: " + cindsCounts.length)
+					// // println("cinds: " + cinds.deep.mkString)
+					// // println("cindsCounts: " + cindsCounts.deep.mkString)
+					// println("inds.length: " + inds.length)
+					// println("indsCounts.length: " + indsCounts.length)
+					// // println("inds: " + inds.deep.mkString)
+					// // println("indsCounts: " + indsCounts.deep.mkString)
+					// println("indsCounts Accuracy: " + calcAccuracyArrF(indsCounts, cindsCounts))
+					// println("inds Accuracy: " + calcAccuracyArrL(inds, cinds))
 
 					// def findBoundaries(keys:Array[Long], jc:IMat, shift:Int)				
 					val jccc = sfd.izeros(1, nnodes * ntrees * nsamps + 1)
@@ -91,7 +110,6 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 		}
 	}
 
-
 	// returns 1 * n
 	def classify(tfdata : Mat) : Mat = {
 		var totalClassifyTime : Float = 0f
@@ -99,8 +117,8 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 		(tfdata, fbounds, treenodecats, fieldLengths, treesMetaInt2, depth, ncats) match {
 			case (tfd : FMat, fb : FMat, tnc : IMat, fL : IMat, tMI2 : IMat, depth : Int, ncts : Int) => {
 				val stfd = RandForest.scaleFD(tfd, fb, math.pow(2, fL(IVFeat)).toInt - 1)
-				tic; RandForest.treeSearch(tnc, stfd, fL, tMI2, depth, ncts); val t1 = toc
-				println("TreeSearch Time: " + t1 + ", Num Elements: " + stfd.length.toFloat + " , Num Bytes: " + Sizeof.INT*stfd.length)
+				RandForest.treeSearch(tnc, stfd, fL, tMI2, depth, ncts)
+				// println("TreeSearch Time: " + t1 + ", Num Elements: " + stfd.length.toFloat + " , Num Bytes: " + Sizeof.INT*stfd.length)
 			}
 		}
 		val out = RandForest.voteForBestCategoriesAcrossTrees(treenodecats.t, ncats) // ntrees * n
@@ -110,6 +128,40 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 	/********************************************************/
 	/*********************** HELPERS ************************/
 	/********************************************************/
+	def calcAccuracyArrF(guess : Array[Float] , actual : Array[Float]) : Float = {
+		if (guess.length != actual.length) {
+			// println("calcAccuracyArr: lengths aren't equal")
+			0.0f
+		} else {
+			var c = 0
+			var i = 0
+			while (i < guess.length) {
+				if (guess(i) == actual(i)) {
+					c += 1
+				}
+				i += 1
+			}
+			(c *1f)/ guess.length
+		}
+	}	
+
+	def calcAccuracyArrL(guess : Array[Long] , actual : Array[Long]) : Float = {
+		if (guess.length != actual.length) {
+			// println("calcAccuracyArr: lengths aren't equal")
+			0.0f
+		} else {
+			var c = 0
+			var i = 0
+			while (i < guess.length) {
+				if (guess(i) == actual(i)) {
+					c += 1
+				}
+				i += 1
+			}
+			(c *1f)/ guess.length
+		}
+	}	
+
 	def calcAccuracy(guess : Mat , actual : Mat) : Float = {
 		println("guess")
 		println(guess)
