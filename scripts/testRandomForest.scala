@@ -74,7 +74,7 @@ class testHashNewRandomForest {
 
 		val fdata : Mat =  FMat(x) // nfeats x n
 		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y.t));  //ncats x n
-		val ntrees : Int = 8
+		val ntrees : Int = 4
 		val depth : Int = 11
 		val nsamps : Int = 512 // ((fdata.nrows * 2f)/3f).toInt
 		val useGPU : Boolean = true
@@ -115,27 +115,78 @@ class testHashNewRandomForest {
 		println("done prep tree: " + t0)
 
 		println("start train")
-		tic
 		rF.train
-		val t1 = toc
-		println("done train: " + t1)
+		println("done train: ")
 
 		val xTest : IMat = load("../Data/digits.mat", "xTest"); // nfeats * ntest
 		val yTest : DMat = load("../Data/digits.mat", "yTest"); // ntest * 1
 		println("start test")
-		tic
 		val yGuess : Mat = rF.classify(FMat(xTest)) 
-		val t2 = toc
-		println("done test: " + t2)
+		println("done test: ")
+
+		// println(yGuess)
+		println(calcAccuracy(yGuess, FMat(yTest.t)))
+		0
+	}
+
+	def prepTreeForTrain3 : NewRandomForest = {
+		val r : Runtime = java.lang.Runtime.getRuntime();
+		println("freeMemory0: " + r.freeMemory() )
+		val x : DMat = load("../Data/8MMNIST/Train7.0/Train7.0.1.mat", "xTrain1"); // nfeats * ntrain
+		println("freeMemory0.1: " + r.freeMemory() )
+		val y : DMat = load("../Data/8MMNIST/Train7.0/Train7.0.1.mat", "yTrain1"); // 1 * ntrain
+		println("freeMemory1: " + r.freeMemory() )
+
+		val numCats = 10;
+		val n = x.ncols
+
+		val fdata : Mat =  FMat(x) // nfeats x n
+		println("freeMemory2: " + r.freeMemory() )
+		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y));  //ncats x n
+		println("freeMemory3: " + r.freeMemory() )
+		val ntrees : Int = 2
+		val depth : Int = 11
+		val nsamps : Int = 512 // ((fdata.nrows * 2f)/3f).toInt
+		val useGPU : Boolean = true
+		val rF = new NewRandomForest(fdata, cats, ntrees, depth, nsamps, useGPU)
+		rF
+	}
+	/******
+	 *
+	 *  Accuracy:0.8120036; T: 2; D: 11; ntrain = 1M; ntest = 1.1M; traintime = 523.675s; testtime = 80.476s
+	 *
+	 *******/
+	def testTrain3 : Int = {
+		println("testTrain3")
+		println("start prep tree")
+		tic
+		val rF = prepTreeForTrain3
+		val t0 = toc
+		println("done prep tree: " + t0)
+
+		println("start train")
+		// tic
+		rF.train
+		// val t1 = toc
+		// println("done train: " + t1)
+
+		val xTest : DMat = load("../Data/8MMNIST/Test1.1/Test1.1.mat", "xTest"); // nfeats * ntest
+		val yTest : DMat = load("../Data/8MMNIST/Test1.1/Test1.1.mat", "yTest"); // 1 * ntest
+		println("start test")
+		// tic
+		val yGuess : Mat = rF.classify(FMat(xTest)) 
+		// val t2 = toc
+		println("done test: ")
 
 		// println(yGuess)
 		println("calcAccuracy: ")
-		tic
-		println(calcAccuracy(yGuess, FMat(yTest.t)))
-		val t3 = toc
-		println("done calcAccuracy: " + t3)
+		// tic
+		println(calcAccuracy(yGuess, FMat(yTest)))
+		// val t3 = toc
+		// println("done calcAccuracy: " + t3)
 		0
 	}
+
 
 	def testExtractField : Int = {
 		val fieldlengths = 1\1\1\2\2\2
@@ -513,7 +564,9 @@ class testHashNewRandomForest {
 val t = new testHashNewRandomForest
 // t.prepTreeForTrain2
 // t.testTrain1
-t.testTrain2
+// t.testTrain2
+t.testTrain3
+// t.prepTreeForTrain3
 // t.testRandForestGetFieldShifts
 // t.testScaleFD
 // t.testScaleFDInForest

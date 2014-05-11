@@ -37,14 +37,19 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 	val ivfeat = Math.min(10, 64 - itree - inode - jfeat - ifeat - icat); 
 	fieldLengths <-- (itree\inode\jfeat\ifeat\ivfeat\icat) 
 	// println("fieldLengths: " + fieldLengths)
+
+	val r : Runtime = java.lang.Runtime.getRuntime();
 	val n = fdata.ncols
 	val treenodes = fdata.izeros(ntrees, fdata.ncols)
+	println("freeMemory4: " + r.freeMemory() )
 	val nnodes = (math.pow(2, depth).toInt)
+	println("freeMemory2: " + r.freeMemory() )
 	val treesMetaInt2 = fdata.izeros(4, (ntrees * nnodes)) // irfeat, threshold, cat, isLeaf
 	treesMetaInt2(2, 0->treesMetaInt2.ncols) = (ncats) * iones(1, treesMetaInt2.ncols)
 	treesMetaInt2(3, 0->treesMetaInt2.ncols) = (-1) * iones(1, treesMetaInt2.ncols)
-
+	println("freeMemory5: " + r.freeMemory() )
 	val treesData = fdata.izeros(1, ntrees * nnodes)
+	println("freeMemory5: " + r.freeMemory() )
 	
 	// var FieldMaskRShifts : Mat = null;  var FieldMasks : Mat = null
 	var sFData : Mat = null
@@ -61,38 +66,14 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 			case (sfd : IMat, tn : IMat, cts : SMat, nsps : Int, fL : IMat, tMI2 : IMat, d : Int) => {
 				var d = 0
 				while (d <  depth) {
-					// println("d: " + d)
+					println("d: " + d)
 					val jc : IMat = null
-					// treePackk(sfdata : Mat, treenodes : Mat, cats : Mat, nsamps : Int, fieldlengths: Mat, useGPU : Boolean)
-					
-					// val treePacked : Array[Long] = RandForest.treePackk(sfd, tn, cts, nsps, fL, useGPU) // useGPU
-					// RandForest.sortLongs(treePacked, true)
-					// val c = RandForest.countC(treePacked)
-					// val inds = new Array[Long](c)
-					// val indsCounts = new Array[Float](c)
-					// RandForest.makeC(treePacked, inds, indsCounts)
-					val (inds, indsCounts) = RandForest.treePackAndSort(sfd, tn, cts, nsps, fL, true)
-					// val treePacked : Array[Long] = RandForest.treePackk(sfd, tn, cts, nsps, fL, false) // useGPU
-					// RandForest.sortLongs(treePacked, false)
-					// val c = RandForest.countC(treePacked)
-					// val cinds = new Array[Long](c)
-					// val cindsCounts = new Array[Float](c)
-					// RandForest.makeC(treePacked, cinds, cindsCounts)
-					// println("cinds.length: " + cinds.length)
-					// println("cindsCounts.length: " + cindsCounts.length)
-					// // println("cinds: " + cinds.deep.mkString)
-					// // println("cindsCounts: " + cindsCounts.deep.mkString)
-					// println("inds.length: " + inds.length)
-					// println("indsCounts.length: " + indsCounts.length)
-					// // println("inds: " + inds.deep.mkString)
-					// // println("indsCounts: " + indsCounts.deep.mkString)
-					// println("indsCounts Accuracy: " + calcAccuracyArrF(indsCounts, cindsCounts))
-					// println("inds Accuracy: " + calcAccuracyArrL(inds, cinds))
 
-					// def findBoundaries(keys:Array[Long], jc:IMat, shift:Int)				
+					val (inds, indsCounts) = RandForest.treePackAndSort(sfd, tn, cts, nsps, fL, true)
+		
 					val jccc = sfd.izeros(1, nnodes * ntrees * nsamps + 1)
-					RandForest.findBoundariess(inds, jccc, RandForest.getFieldShifts(fL)(JFeat), true)
-					
+					RandForest.findBoundariess(inds, jccc, RandForest.getFieldShifts(fL)(JFeat), true)	
+
 					val outv = IMat(sfd.izeros(nsamps, ntrees * nnodes))
 					val outf = IMat(sfd.izeros(nsamps, ntrees * nnodes))
 					val outg = FMat(sfd.zeros(nsamps, ntrees * nnodes))
@@ -100,7 +81,7 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 					RandForest.minImpurityy(inds, IMat(new FMat(indsCounts.length, 1, indsCounts)), outv, outf, outg, outc, jccc, fL, ncats, 0, true)
 
 					RandForest.updateTreeDataa(outv, outf, outg, outc, tMI2, fL)
-					
+
 					if (!(d == (depth - 1))) {
 						RandForest.treeStepss(tn , sfd, fL, tMI2, depth, ncats, false, false)
 					}
