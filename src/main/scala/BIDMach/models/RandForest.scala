@@ -229,6 +229,7 @@ object RandForest {
   // TODO: move 
   def treePackAndSort(sfd : IMat, tn : IMat, cts : SMat, nsps : Int, fL : IMat, useGPU : Boolean) : (Array[Long], Array[Float]) = {
     println("TreePackAndSort: Num Data Points to handle: " + sfd.ncols + " with num features: " + sfd.nrows)
+    val start = System.currentTimeMillis
     val b = getNumBlocksForTreePack(sfd, tn, cts, nsps)
     println("num blocks for treePackAndSort: b: " + b)
     val n = (sfd.ncols*1f/b).toInt 
@@ -269,6 +270,8 @@ object RandForest {
       }
       bb+=1
     }
+    val done = System.currentTimeMillis
+    println("treePackAndSort: total time taken for num blocks of: " + b + " took: " + (done - start)/1000f + " numDataPoints: " + sfd.ncols)
     (fInds, fCounts)
   } 
 

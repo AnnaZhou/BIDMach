@@ -144,7 +144,7 @@ class testHashNewRandomForest {
 		println("freeMemory2: " + r.freeMemory() )
 		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y));  //ncats x n
 		println("freeMemory3: " + r.freeMemory() )
-		val ntrees : Int = 2
+		val ntrees : Int = 4
 		val depth : Int = 11
 		val nsamps : Int = 512 // ((fdata.nrows * 2f)/3f).toInt
 		val useGPU : Boolean = true
@@ -165,8 +165,11 @@ class testHashNewRandomForest {
 		println("done prep tree: " + t0)
 
 		println("start train")
+		val trainStart = System.currentTimeMillis
 		// tic
 		rF.train
+		val trainDone = System.currentTimeMillis
+		println("Done Train: TrainTime in seconds: " + (trainDone - trainStart)/1000f);
 		// val t1 = toc
 		// println("done train: " + t1)
 
@@ -174,9 +177,11 @@ class testHashNewRandomForest {
 		val yTest : DMat = load("../Data/8MMNIST/Test1.1/Test1.1.mat", "yTest"); // 1 * ntest
 		println("start test")
 		// tic
+		val testStart = System.currentTimeMillis
 		val yGuess : Mat = rF.classify(FMat(xTest)) 
+		val testDone = System.currentTimeMillis
 		// val t2 = toc
-		println("done test: ")
+		println("Done Test: " + (testDone - testStart)/1000f)
 
 		// println(yGuess)
 		println("calcAccuracy: ")

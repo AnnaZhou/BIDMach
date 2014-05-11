@@ -24,6 +24,7 @@ import jcuda.runtime.JCuda._
  **********/
 class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps : Int, useGPU : Boolean) {
 	// val ITree = 0; val INode = 1; val IRFeat = 2; val IVFeat = 3; val ICat = 4
+	println("NewRandomForest with: numDataPoints: " + fdata.ncols + " numTrees: " + ntrees + " nsamps: " + nsamps)
 	val ITree = 0; val INode = 1; val JFeat = 2; val IFeat = 3; val IVFeat = 4; val ICat = 5
 
 	var fbounds : Mat = mini(fdata, 2) \ maxi(fdata, 2)
@@ -36,7 +37,7 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 
 	val ivfeat = Math.min(10, 64 - itree - inode - jfeat - ifeat - icat); 
 	fieldLengths <-- (itree\inode\jfeat\ifeat\ivfeat\icat) 
-	// println("fieldLengths: " + fieldLengths)
+	println("New RandomForest: fieldLengths: " + fieldLengths)
 
 	val r : Runtime = java.lang.Runtime.getRuntime();
 	val n = fdata.ncols
