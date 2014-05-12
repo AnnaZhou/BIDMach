@@ -1,7 +1,8 @@
 import edu.berkeley.bid.CUMAT
 import BIDMach.models.NewRandomForest
-import BIDMach.models.RandomForest
 import BIDMach.models.RandForest
+import BIDMach.models.TTracker
+import BIDMach.models.CTracker
 
 
 class testHashNewRandomForest {
@@ -26,7 +27,7 @@ class testHashNewRandomForest {
 
 		val fdata : Mat =  FMat(x.t) // nfeats x n
 		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y.t));  //ncats x n
-		val ntrees : Int = 64
+		val ntrees : Int = 2
 		val depth : Int = 13
 		val nsamps : Int = 32 //((fdata.nrows * 2f)/3f).toInt
 		val useGPU : Boolean = true
@@ -36,6 +37,9 @@ class testHashNewRandomForest {
 
 	/*****
 	 * D: 13 T: 60 0.93229
+	 * D: 13 T: 64 0.9329427
+	 * D: 13 T: 2 0.9160156
+	 * D: 13 T: 2 0.9186198 // recursive cat update
 	 *****/
 	def testTrain1 : Int = {
 		val rF = prepTreeForTrain1
@@ -45,6 +49,10 @@ class testHashNewRandomForest {
 		val yGuess : Mat = rF.classify(FMat(xTest.t)) 
 		// println(yGuess)
 		println(calcAccuracy(yGuess, FMat(yTest.t)))
+		println("TTracker")
+		TTracker.printP
+		println("CTracker")
+		CTracker.printP
 		0
 	}
 
@@ -79,6 +87,7 @@ class testHashNewRandomForest {
 		val nsamps : Int = 512 // ((fdata.nrows * 2f)/3f).toInt
 		val useGPU : Boolean = true
 		val rF = new NewRandomForest(fdata, cats, ntrees, depth, nsamps, useGPU)
+		TTracker.printP
 		rF
 	}
 
@@ -126,6 +135,7 @@ class testHashNewRandomForest {
 
 		// println(yGuess)
 		println(calcAccuracy(yGuess, FMat(yTest.t)))
+		TTracker.printP
 		0
 	}
 
@@ -144,9 +154,9 @@ class testHashNewRandomForest {
 		println("freeMemory2: " + r.freeMemory() )
 		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y));  //ncats x n
 		println("freeMemory3: " + r.freeMemory() )
-		val ntrees : Int = 4
-		val depth : Int = 11
-		val nsamps : Int = 512 // ((fdata.nrows * 2f)/3f).toInt
+		val ntrees : Int = 8
+		val depth : Int = 11 
+		val nsamps : Int = 128// ((fdata.nrows * 2f)/3f).toInt // TODO doesnt work for 32 for treepack // doesn't work for 64 for sortlongs
 		val useGPU : Boolean = true
 		val rF = new NewRandomForest(fdata, cats, ntrees, depth, nsamps, useGPU)
 		rF
@@ -154,6 +164,8 @@ class testHashNewRandomForest {
 	/******
 	 *
 	 *  Accuracy:0.8120036; T: 2; D: 11; ntrain = 1M; ntest = 1.1M; traintime = 523.675s; testtime = 80.476s
+	 *	Accuracy:0.8678; T: 4; D: 11; ntrain = 1M; ntest = 1.1M; traintime = 733.68s; testtime = 49.682s
+	 *  Accuracy:0.8938918; T: 8; D: 11; ntrain = 1M; ntest = 1.1M; traintime = 506.01s; testtime = 52.652s
 	 *
 	 *******/
 	def testTrain3 : Int = {
@@ -161,6 +173,71 @@ class testHashNewRandomForest {
 		println("start prep tree")
 		tic
 		val rF = prepTreeForTrain3
+		val t0 = toc
+		println("done prep tree: " + t0)
+
+		println("================================start train================================")
+		val trainStart = System.currentTimeMillis
+		// tic
+		rF.train
+		val trainDone = System.currentTimeMillis
+		println("================================Done Train: TrainTime in seconds: " + (trainDone - trainStart)/1000f + "================================");
+		// val t1 = toc
+		// println("done train: " + t1)
+
+		val xTest : DMat = load("../Data/8MMNIST/Test1.1/Test1.1.mat", "xTest"); // nfeats * ntest
+		val yTest : DMat = load("../Data/8MMNIST/Test1.1/Test1.1.mat", "yTest"); // 1 * ntest
+		println("================================start test================================")
+		// tic
+		val testStart = System.currentTimeMillis
+		val yGuess : Mat = rF.classify(FMat(xTest)) 
+		val testDone = System.currentTimeMillis
+		// val t2 = toc
+		println("================================Done Test: " + (testDone - testStart)/1000f +  "================================")
+
+		// println(yGuess)
+		println("calcAccuracy: ")
+		// tic
+		println(calcAccuracy(yGuess, FMat(yTest)))
+		// val t3 = toc
+		// println("done calcAccuracy: " + t3)
+		TTracker.printP
+		0
+	}
+
+	def prepTreeForTrainCov : NewRandomForest = {
+		val r : Runtime = java.lang.Runtime.getRuntime();
+		println("freeMemory0: " + r.freeMemory() )
+		val x : DMat = load("../Data/covtype.mat", "xTrain"); // nfeats * ntrain
+		println("freeMemory0.1: " + r.freeMemory() )
+		val y : DMat = load("../Data/covtype.mat", "yTrain"); // 1 * ntrain
+		println("freeMemory1: " + r.freeMemory() )
+
+		val numCats = 7;
+		val n = x.ncols
+
+		val fdata : Mat =  FMat(x) // nfeats x n
+		println("freeMemory2: " + r.freeMemory() )
+		val cats : Mat = sparse(FMat((icol(0->numCats) * iones(1,n) )  == y));  //ncats x n
+		println("freeMemory3: " + r.freeMemory() )
+		val ntrees : Int = 32
+		val depth : Int = 15
+		val nsamps : Int = 32 // ((fdata.nrows * 2f)/3f).toInt
+		val useGPU : Boolean = true
+		val rF = new NewRandomForest(fdata, cats, ntrees, depth, nsamps, useGPU)
+		rF
+	}
+	/******
+	 *
+	 *	Accuracy:0.68903565; T: 32; D: 11; nsamps: 32 ntrain = 290506; ntest = 290506; traintime =  36.233s; testtime = 2.269s
+	 *	Accuracy: 0.71188545; T: 32; D: 15; nsamps: 32 ntrain = 290506; ntest = 290506; traintime =   66.699s; testtime = 2.89s
+	 *
+	 *******/
+	def testTrainCov : Int = {
+		println("testTrainCov")
+		println("start prep tree")
+		tic
+		val rF = prepTreeForTrainCov
 		val t0 = toc
 		println("done prep tree: " + t0)
 
@@ -173,8 +250,8 @@ class testHashNewRandomForest {
 		// val t1 = toc
 		// println("done train: " + t1)
 
-		val xTest : DMat = load("../Data/8MMNIST/Test1.1/Test1.1.mat", "xTest"); // nfeats * ntest
-		val yTest : DMat = load("../Data/8MMNIST/Test1.1/Test1.1.mat", "yTest"); // 1 * ntest
+		val xTest : DMat = load("../Data/covtype.mat", "xTest"); // nfeats * ntest
+		val yTest : DMat = load("../Data/covtype.mat", "yTest"); // 1 * ntest
 		println("start test")
 		// tic
 		val testStart = System.currentTimeMillis
@@ -191,7 +268,6 @@ class testHashNewRandomForest {
 		// println("done calcAccuracy: " + t3)
 		0
 	}
-
 
 	def testExtractField : Int = {
 		val fieldlengths = 1\1\1\2\2\2
@@ -571,6 +647,7 @@ val t = new testHashNewRandomForest
 // t.testTrain1
 // t.testTrain2
 t.testTrain3
+// t.testTrainCov
 // t.prepTreeForTrain3
 // t.testRandForestGetFieldShifts
 // t.testScaleFD

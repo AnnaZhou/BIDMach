@@ -8,6 +8,7 @@ import BIDMat.Sorting._
 import edu.berkeley.bid.CUMAT
 import BIDMach.models.RForest._
 import BIDMach.models.RandForest._
+import BIDMach.models.TTracker._
 import jcuda._
 import jcuda.runtime._
 import jcuda.runtime.JCuda._
@@ -62,7 +63,6 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 	}
 	
 	def train {
-		var totalTrainTime = 0f
 		(sFData, treenodes, cats, nsamps, fieldLengths, treesMetaInt2, depth) match {
 			case (sfd : IMat, tn : IMat, cts : SMat, nsps : Int, fL : IMat, tMI2 : IMat, d : Int) => {
 				var d = 0
@@ -98,7 +98,7 @@ class NewRandomForest(fdata : Mat, cats : Mat, ntrees : Int, depth : Int, nsamps
 		val treenodecats = tfdata.izeros(ntrees, tfdata.ncols)
 		(tfdata, fbounds, treenodecats, fieldLengths, treesMetaInt2, depth, ncats) match {
 			case (tfd : FMat, fb : FMat, tnc : IMat, fL : IMat, tMI2 : IMat, depth : Int, ncts : Int) => {
-				val stfd = RandForest.scaleFD(tfd, fb, math.pow(2, fL(IVFeat)).toInt - 1)
+				val stfd = RandForest.scaleFDC(tfd, fb, math.pow(2, fL(IVFeat)).toInt - 1)
 				RandForest.treeSearch(tnc, stfd, fL, tMI2, depth, ncts)
 				// println("TreeSearch Time: " + t1 + ", Num Elements: " + stfd.length.toFloat + " , Num Bytes: " + Sizeof.INT*stfd.length)
 			}

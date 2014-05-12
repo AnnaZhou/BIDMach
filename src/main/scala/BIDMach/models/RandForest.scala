@@ -14,6 +14,43 @@ import jcuda.runtime.JCuda._
 import jcuda.runtime.cudaMemcpyKind._
 import edu.berkeley.bid.CUMAT
 
+abstract class Tracker {
+  import scala.collection.mutable.HashMap
+
+  val t = new HashMap[String, Float]
+  var tTime : Float = 0f
+
+  def add(key : String, v : Float) {
+    if (!t.contains(key)) {
+      t(key) = v
+    } else {
+      t(key) += v
+    }
+    tTime += v
+  }
+
+  def getP(key : String) : Float = {
+    (t(key)/tTime) * 100f
+  }
+
+  def printP {
+    println("tTime: " + tTime + "s")
+    t foreach {
+      case (key, value) => {
+        println (key + "-->" + getP(key) + " = " + (getP(key) * tTime / 100f) + "s")
+      }
+    }
+  }
+}
+
+object TTracker extends Tracker {
+
+}
+
+object CTracker extends Tracker {
+
+}
+
 object RandForest {
   import jcuda.runtime._
   import jcuda.runtime.JCuda._
@@ -83,16 +120,22 @@ object RandForest {
       cudaMemcpy(deviceData, Pointer.to(a), memorySize, cudaMemcpyKind.cudaMemcpyHostToDevice);
       val t1 = toc
       println("sortLongs: Send to GPU time: " + t1)
+      TTracker.add("sortlongs.alloc", t1)
       tic
+      println("lsort: GPUmem before: " + GPUmem)
       val err = CUMAT.lsort(deviceData, a.length, 1)
       if (err != 0) {throw new RuntimeException("lsort: CUDA kernel error in lsort " + cudaGetErrorString(err))}
+      println("lsort: GPUmem after: " + GPUmem)
+      
       val t2 = toc
       println("sortLongs: GPU: sort time: " + t2)
+      TTracker.add("sortlongs.runtime", t2)
       tic
       cudaMemcpy(Pointer.to(a), deviceData, memorySize, cudaMemcpyKind.cudaMemcpyDeviceToHost);
       cudaFree(deviceData);
       val t3 = toc
       println("sortLongs: Send back to GPU time plus dealloc: " + t3)
+      TTracker.add("sortlongs.dealloc", t3)
     } else {
 
       def comp(i1 : Int, i2 : Int) : Int = {
@@ -166,17 +209,20 @@ object RandForest {
         val gifL = GIMat(fL)
         val t1 = toc
         println("Treepack: GPU Allocation time: " + t1)
+        TTracker.add("treepack.alloc", t1)
         tic
         val err = CUMACH.treePack(gFd.data, giTreenodes.data, gsCatsIR, gsCatsJC, deviceData, gifL.data, gFd.nrows, gFd.ncols, ntrees, ns)
         if (err != 0) {throw new RuntimeException("treePack: CUDA kernel error in CUMACH.treePack " + cudaGetErrorString(err))}
         val t2 = toc
         println("Treepack: GPU Run time: " + t2)
+        TTracker.add("treepack.runtime", t2)
         tic
         cudaMemcpy(Pointer.to(out), deviceData, memorySize, cudaMemcpyKind.cudaMemcpyDeviceToHost);
         cudaFree(deviceData);
         gFd.free; gsCats.free; giTreenodes.free; gifL.free
         val t3 = toc
         println("Treepack: GPU dealloc and transfer back time: " + t3)
+        TTracker.add("treepack.dealloc", t3)
         out
       }
       case (sfd : IMat, tn : IMat, cts : SMat, ns : Int, fL : IMat, false) => {
@@ -244,7 +290,7 @@ object RandForest {
       if ( (sfd.ncols - (bb - 1) * n) >= n) {
         r = ( ((bb - 1) * n) -> bb*n )
       } else if ((sfd.ncols - (bb - 1) * n ) > 0) {
-        r = ( ((bb - 1) * n) -> sfd.nrows)
+        r = ( ((bb - 1) * n) -> sfd.ncols)
       }
       if (r.length > 0) {
         // println("treePack and Sort")
@@ -271,7 +317,7 @@ object RandForest {
       bb+=1
     }
     val done = System.currentTimeMillis
-    println("treePackAndSort: total time taken for num blocks of: " + b + " took: " + (done - start)/1000f + " numDataPoints: " + sfd.ncols)
+    println("TREEPACKANDSORT: total time taken for num blocks of: " + b + " took: " + (done - start)/1000f + " numDataPoints: " + sfd.ncols)
     (fInds, fCounts)
   } 
 
@@ -279,16 +325,17 @@ object RandForest {
    * Given what is available in the GPU determines a block size of data that fits into GPU memory
    */
   def getNumBlocksForTreePack(sfd : IMat, tn : IMat, cts : SMat, nsps : Int) : Int = {
+    println("getNumBlocksForTreePack: nsps: " + nsps)
     val ntrees = tn.nrows
-    val tBytes = Sizeof.LONG * ntrees * (nsps/1e9f) * (cts.nnz)+ Sizeof.INT * sfd.length/1e9f + Sizeof.INT * tn.length/1e9f + Sizeof.INT/1e9f * cts.nnz 
+    val tBytes = Sizeof.LONG * (ntrees) * (nsps) * (cts.nnz/1e5f)+ Sizeof.INT * sfd.length/1e5f + Sizeof.INT * tn.length/1e5f + Sizeof.INT * (cts.nnz/1e5f)
     // println("tBytes: " + tBytes)
     val (p, b, t) = GPUmem
-    // println("availableBytes/1e9f: " + b/1e9f)
-    val aBytes = b/1e9f - 0.6f * t/1e9f
-    // println("aBytes/1e9f: " + aBytes/1e9f)
+    println("availableBytes/1e5f: " + b/1e5f)
+    val aBytes = b/1e5f - 0.6f * t/1e5f
+    println("aBytes: " + aBytes)
     if (aBytes > 0f) {
-      // println("fract: " + ((tBytes * 1f)/aBytes))
-      math.ceil(((tBytes * 1f)/aBytes)).toInt
+      println("fract: " + ((tBytes * 1f)/aBytes))
+      math.max(1, math.ceil(((tBytes * 1f)/aBytes)).toInt)
     } else {
       throw new RuntimeException("getBlockSizeForTreePack: not enough GPUmem available" )
       0
@@ -297,6 +344,7 @@ object RandForest {
 
   // Find boundaries where (key >> shift) changes
   def findBoundariess(keys:Array[Long], jc:IMat, shift:Int, useGPU : Boolean) {
+    val start = System.currentTimeMillis
     println("find boundaries")
     if (useGPU) {
       // public static native int findBoundaries(Pointer keys, Pointer jc, int n, int njc, int shift);
@@ -308,20 +356,25 @@ object RandForest {
       val gjc = GIMat(jc)
       val t1 = toc
       println("findBoundaries allocation time: " + t1)
+      TTracker.add("findboundaries.alloc", t1)
       tic
       val err = CUMACH.findBoundaries(dkeys, gjc.data, keys.length, jc.length, shift)
       if (err != 0) {throw new RuntimeException("findBoundaries: CUDA kernel error in CUMACH.findBoundaries " + cudaGetErrorString(err))}
       val t2 = toc
       println("findBoundaries run time: " + t2)
+      TTracker.add("findboundaries.runtime", t2)
       tic
       cudaFree(dkeys)
       jc <-- gjc
       gjc.free
       val t3 = toc
       println("findBoundaries delloc time: " + t3)
+      TTracker.add("findboundaries.dealloc", t3)
     } else {
       findBoundaries(keys, jc, shift)
     }
+    val done = System.currentTimeMillis
+    println("find boundaries full time: " + (done - start)/1000f);
   }
   
   def findBoundaries(keys:Array[Long], jc:IMat, shift:Int) { 
@@ -342,13 +395,27 @@ object RandForest {
     }
   }
 
+  def getGPUNeededForMinImpurity(keys:Array[Long], cnts:IMat, outv:IMat, outf:IMat, outg:FMat, outc:IMat, jc:IMat, fieldlens:IMat, 
+               ncats:Int) : Float = {
+    // minImpurityy
+    val conv : Float = 9.31323e-10f
+    (Sizeof.LONG*conv)*keys.length + (Sizeof.INT*conv)*cnts.length + 3*(Sizeof.INT*conv)*outv.length + (Sizeof.FLOAT*conv)*outg.length +
+      (Sizeof.INT*conv)*jc.length + (Sizeof.INT*conv)*fieldlens.length
+  }
+
   // def minImpurity(keys:Array[Long], cnts:IMat, outv:IMat, outf:IMat, outg:FMat, outc:IMat, jc:IMat, fieldlens:IMat, 
      //           ncats:Int, fnum:Int)
   def minImpurityy(keys:Array[Long], cnts:IMat, outv:IMat, outf:IMat, outg:FMat, outc:IMat, jc:IMat, fieldlens:IMat, 
                ncats:Int, fnum:Int, useGPU : Boolean) {
     println("minImpurity")
+    val start = System.currentTimeMillis
     if (useGPU) {
       // public static native int minImpurity(Pointer keys, Pointer counts, Pointer outv, Pointer outf, Pointer outg, Pointer outc, Pointer jc, Pointer fieldlens, int nnodes, int ncats, int nsamps, int impType);
+      val gNeeded : Float = getGPUNeededForMinImpurity(keys, cnts, outv, outf, outg, outc, jc, fieldlens, ncats)
+      val conv : Float = 9.31323e-10f
+      val (p, b, t) = GPUmem
+      val gAvail : Float = b*conv
+      println("minImpurity: GPU G needed: " + gNeeded + " G available: " + gAvail)
       tic
       val dcountsM = GIMat(cnts)
       val doutvM = GIMat(outv)
@@ -363,12 +430,14 @@ object RandForest {
       cudaMemcpy(dkeys, Pointer.to(keys), memorySize, cudaMemcpyKind.cudaMemcpyHostToDevice);
       val t1 = toc
       println("minImpurity: alloc time: " + t1)
+      TTracker.add("minimpurity.alloc", t1)
 
       tic
       val err = CUMACH.minImpurity(dkeys, dcountsM.data, doutvM.data, doutfM.data, doutgM.data, doutcM.data, djcM.data, dfieldlensM.data, outv.nrows, ncats, outv.ncols, fnum)
       if (err != 0) {throw new RuntimeException("minImpurity: CUDA kernel error in CUMACH.minImpurity " + cudaGetErrorString(err))}
       val t2 = toc
       println("minImpurity: run time: " + t2) 
+      TTracker.add("minimpurity.runtime", t2)
 
       tic
       outv <-- doutvM; 
@@ -379,10 +448,13 @@ object RandForest {
       cudaFree(dkeys)
       val t3 = toc
       println("minImpurity: dealloc time: " + t3)
+      TTracker.add("minimpurity.dealloc", t3)
 
     } else {
       minImpurity(keys, cnts, outv, outf, outg, outc, jc, fieldlens, ncats, fnum)
     }
+    val done = System.currentTimeMillis
+    println("minImpurity: full time" + (done - start)/1000f);
   }
   
   trait imptyType {
@@ -681,6 +753,7 @@ object RandForest {
     }
     val t1 = toc
     println("updateTreeDataa: runtime: " + t1)
+    TTracker.add("updatetreedataa.runtime", t1)
     // // println("treeData")
     // // println(treeData)
   }
@@ -698,6 +771,7 @@ object RandForest {
         treeSteps(tn, fd, fL, tMI, depth, ncats, isLastIteration) 
         val t1 = toc
         println("TreeSteps took: " + t1)
+        TTracker.add("treesteps.runtime", t1)
       }
   }
 
@@ -712,7 +786,13 @@ object RandForest {
       while (itree < ntrees) {
         val inode = tn(itree, icol)
         if (isLastIteration) {
-          val cat = tMI(2, itree * nnodes + inode)
+          var cat = tMI(2, itree * nnodes + inode)
+          var pnode = (inode -1)/2
+          while (cat >= ncats && pnode >= 0) {
+            // get the parent's category
+            cat = tMI(2, itree * nnodes + pnode)
+            pnode = (pnode -1)/2
+          }
           tn(itree, icol) = math.min(cat, ncats)
         } else if (tMI(3, itree * nnodes + inode) > 0) {
           // Do nothing
@@ -743,6 +823,7 @@ object RandForest {
     }
     val t1 = toc
     println("treeSearch: runtime: " + t1)
+    CTracker.add("treesearch.runtime", t1)
   }
 
   // creats new fd
@@ -752,6 +833,17 @@ object RandForest {
     val scaleFactor = (fd - fb(?, 0)) / max(1e-4f, (fb(?, 1) - fb(?, 0)))
     val t1 = toc
     println("ScaleFD: runtime: " + t1)
+    // TTracker.add("scalefd.runtime", t1)
+    IMat(min(nifeats, scaleFactor * nifeats))
+  }
+
+  def scaleFDC(fd : FMat, fb : FMat, nifeats : Int) : IMat = {
+    println("Start scaleFD")
+    tic
+    val scaleFactor = (fd - fb(?, 0)) / max(1e-4f, (fb(?, 1) - fb(?, 0)))
+    val t1 = toc
+    println("ScaleFD: runtime: " + t1)
+    CTracker.add("scalefdc.runtime", t1)
     IMat(min(nifeats, scaleFactor * nifeats))
   }
 
@@ -793,6 +885,7 @@ object RandForest {
     val majorityIndicies = bundle._2
     val t1 = toc
     println("voteForBestCategoriesAcrossTrees: time: " + t1)
+    CTracker.add("vote.runtime", t1)
     majorityIndicies.t
   }
   
@@ -810,6 +903,7 @@ object RandForest {
     }
     val t1 = toc
     println("countC: time: " + t1)
+    TTracker.add("countc.runtime", t1)
     return count
   }
   
@@ -832,6 +926,7 @@ object RandForest {
     }
     val t1 = toc
     println("makeC: time: " + t1)
+    TTracker.add("makec.runtime", t1)
   }
   
   def mergeC(ind1:Array[Long], counts1:Array[Float], ind2:Array[Long], counts2:Array[Float]):Int = {
@@ -859,6 +954,7 @@ object RandForest {
     }
     val t1 = toc
     println("mergeC: time: " + t1);
+    TTracker.add("mergec.runtime", t1)
     return count
   }
   
@@ -891,6 +987,7 @@ object RandForest {
     }
     val t1 = toc
     println("mergeV: time: " + t1)
+    TTracker.add("mergev.runtime", t1)
     return count
   }
   
