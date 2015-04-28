@@ -148,7 +148,8 @@ object GLM {
   val logistic = 1;
   val maxp = 2;
   val svm = 3;
-
+  val lbfgs = 4;
+  
   object LinearLink extends GLMlink {
   	def link(in:Float) = {
   		in
@@ -276,6 +277,36 @@ object GLM {
 
   	val fnflops = 2;
   }
+  
+    object LBFGSLink extends GLMlink {
+    def link(in:Float) = {
+      in
+    }
+
+    def mean(in:Float) = {
+      in
+    }
+
+    def derivlink(pred:Float, targ:Float) = {
+      val ttarg = 2 * targ - 1;
+      if (pred * ttarg < 1f) ttarg else 0f;
+    }
+
+    def likelihood(pred:Float, targ:Float) = {
+      val ttarg = 2 * targ - 1;
+      scala.math.min(0f, ttarg * pred - 1f);
+    }
+
+    override val linkfn = link _;
+
+    override val derivfn = derivlink _;
+
+    override val meanfn = mean _;
+
+    override val likelihoodfn = likelihood _;
+
+    val fnflops = 2;
+  }
 
   object LinkEnum extends Enumeration {
   	type LinkEnum = Value;
@@ -290,7 +321,7 @@ object GLM {
   	val fnflops:Int
   }
   
-  val linkArray = Array[GLMlink](LinearLink, LogisticLink, MaxpLink, SVMLink)
+  val linkArray = Array[GLMlink](LinearLink, LogisticLink, MaxpLink, SVMLink, LBFGSLink)
   
   class Options extends Opts {}
   
@@ -431,6 +462,10 @@ object GLM {
   def mkUpdater(nopts:Updater.Opts) = {
   	new ADAGrad(nopts.asInstanceOf[ADAGrad.Opts])
   } 
+   
+  def LBFGSUpdater(nopts:Updater.Opts) = {
+    new LBFGS(nopts.asInstanceOf[LBFGS.Opts])
+  } 
   
   def mkRegularizer(nopts:Mixin.Opts):Array[Mixin] = {
     Array(new L1Regularizer(nopts.asInstanceOf[L1Regularizer.Opts]))
@@ -447,6 +482,9 @@ object GLM {
   
   class LearnOptions extends Learner.Options with GLM.Opts with MatDS.Opts with ADAGrad.Opts with L1Regularizer.Opts
   class Learn12Options extends Learner.Options with GLM.Opts with MatDS.Opts with ADAGrad.Opts with L1Regularizer.Opts with L2Regularizer.Opts
+    
+  class LearnLBFGSOptions extends Learner.Options with GLM.Opts with MatDS.Opts with LBFGS.Opts with L1Regularizer.Opts
+  class LearnLBFGS12Options extends Learner.Options with GLM.Opts with MatDS.Opts with LBFGS.Opts with L1Regularizer.Opts with L2Regularizer.Opts
      
   // Basic in-memory learner with generated target
   def learner(mat0:Mat, d:Int = 0) = { 
@@ -623,7 +661,65 @@ object GLM {
         nopts)
     (nn, nopts)
   }
-     
+  
+    // Basic in-memory SVM learner with explicit target
+  def LBFGSlearner(mat0:Mat, targ:Mat):(Learner, LearnLBFGS12Options) = {
+    val mopts = new LearnLBFGS12Options;
+    mopts.lrate = 1f
+    mopts.batchSize = math.min(10000, mat0.ncols/30 + 1)
+    if (mopts.links == null) mopts.links = izeros(targ.nrows,1)
+    mopts.links.set(4)
+    mopts.reg2weight = 1f
+    val model = new GLM(mopts)
+    val mm = new Learner(
+        new MatDS(Array(mat0, targ), mopts), 
+        model, 
+        mkL1L2Regularizers(mopts),
+        new LBFGS(mopts), mopts)
+    (mm, mopts)
+  }
+    // This function constructs a predictor from an existing model 
+  def LBFGSpredictor(model:Model, mat1:Mat, preds:Mat):(Learner, LearnLBFGSOptions) = {
+    val nopts = new LearnLBFGSOptions;
+    nopts.batchSize = math.min(10000, mat1.ncols/30 + 1)
+    if (nopts.links == null) nopts.links = izeros(preds.nrows,1)
+    nopts.links.set(4)
+    nopts.putBack = 1
+    val nn = new Learner(
+        new MatDS(Array(mat1, preds), nopts), 
+        model.asInstanceOf[GLM], 
+        null,
+        null,
+        nopts)
+    (nn, nopts)
+  }
+   // This function constructs a learner and a predictor. 
+  def LBFGSlearner(mat0:Mat, targ:Mat, mat1:Mat, preds:Mat):(Learner, LearnLBFGS12Options, Learner, LearnLBFGS12Options) = {
+    val mopts = new LearnLBFGS12Options;
+    val nopts = new LearnLBFGS12Options;
+    mopts.lrate = 1f
+    mopts.batchSize = math.min(10000, mat0.ncols/30 + 1)
+    if (mopts.links == null) mopts.links = izeros(targ.nrows,1)
+    mopts.links.set(4)
+    mopts.reg2weight = 1f
+    nopts.links = mopts.links
+    nopts.batchSize = mopts.batchSize
+    nopts.putBack = 1
+    val model = new GLM(mopts)
+    val mm = new Learner(
+        new MatDS(Array(mat0, targ), mopts), 
+        model, 
+        mkL1L2Regularizers(mopts),
+        new LBFGS(mopts), mopts)
+    val nn = new Learner(
+        new MatDS(Array(mat1, preds), nopts), 
+        model, 
+        null,
+        null,
+        nopts)
+    (mm, mopts, nn, nopts)
+  }
+  
   def learnBatch(mat0:Mat, targ:Mat, d:Int) = {
     val opts = new LearnOptions
     opts.lrate = 1f
