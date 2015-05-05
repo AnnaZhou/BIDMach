@@ -9,6 +9,7 @@ class L1Regularizer(override val opts:L1Regularizer.Opts = new L1Regularizer.Opt
      for (i <- 0 until opts.r1nmats) {
        val v = if (opts.reg1weight.ncols == 1) - opts.reg1weight else - opts.reg1weight(?,i);
        updatemats(i) ~ updatemats(i) + (sign(modelmats(i)) ∘  v) 
+       mydW(i) ~ (-(sign(modelmats(i)))) ∘  v  //java.lang.NullPointerException
      }
    }
    
@@ -26,6 +27,7 @@ class L2Regularizer(override val opts:L2Regularizer.Opts = new L2Regularizer.Opt
   	 for (i <- 0 until opts.r2nmats) {
   	   val v = if (opts.reg2weight.ncols == 1) - opts.reg2weight else - opts.reg2weight(?,i);
   	   updatemats(i) ~ updatemats(i) + (modelmats(i) ∘  v)
+       mydW(i) ~ (-modelmats(i)) ∘  v
   	 }
    }
    
