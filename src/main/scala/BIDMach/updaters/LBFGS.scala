@@ -24,27 +24,40 @@ class LBFGS(override val opts:LBFGS.Opts = new LBFGS.Options) extends Updater {
   var one:Mat = null
   var myS:Mat = null
   var myY:Mat = null
-  var mydW:Mat = null
+  var mydW:Array[Mat] = null
+  var myYY:Array[Mat] = null
   var myLBFGSindex = 0
   var myLBFGSiold  = 0
+  var vk:Mat = null
+  var eye:Mat = null 
+  var rho:FMat = 1.0f 
+  var rk:Mat = null 
+  var Hk:Mat = null 
   
   override def init(model0:Model) = {
     model = model0
     modelmats = model.modelmats;
     updatemats = model.updatemats;
+    myYY = model.myYY;  //TODO:fix it
     val mm = modelmats(0);
     mask = opts.mask;
     val nmats = modelmats.length;
   //   sumSq = new Array[Mat](nmats);
   //  myS  = new Array[Mat](nmats);
-  //  myY  = new Array[Mat](nmats);
-  //  mydW  = new Array[Mat](nmats);
-    
+//    myY  = new Array[Mat](nmats);
+    mydW  = model.mydW;
+    vk = zeros(modelmats(0).ncols, modelmats(0).ncols);
+    rk = zeros(modelmats(0).ncols, modelmats(0).ncols);
+    Hk = zeros(modelmats(0).ncols, modelmats(0).ncols);
+    eye = zeros(modelmats(0).ncols, modelmats(0).ncols);
+    for(i<-0 until modelmats(0).ncols){eye(i,i)=1.0f;}
+      
     for (i <- 0 until nmats) {
  //     sumSq(i) = modelmats(i).ones(modelmats(i).nrows, modelmats(i).ncols) *@ opts.initsumsq
-      myS  =modelmats(i).ones(modelmats(i).nrows, modelmats(i).ncols) *@ opts.initmys
-      myY  =updatemats(i).ones(updatemats(i).nrows, updatemats(i).ncols) *@ opts.initmys
-      mydW =zeros(updatemats(i).nrows, updatemats(i).ncols) *@ opts.initmys 
+      myS  =  modelmats(i).ones(modelmats(i).nrows, modelmats(i).ncols) *@ opts.initmys
+      myY  =  updatemats(i).ones(updatemats(i).nrows, updatemats(i).ncols) *@ opts.initmys
+ //     mydW(i) = modelmats(i).ones(modelmats(i).nrows, modelmats(i).ncols) *@ opts.initmys
+        mydW(i) = mydW(i) *@ opts.initmys 
     }
     stepn = mm.zeros(1,1);
     one = mm.ones(1,1);
@@ -112,21 +125,29 @@ class LBFGS(override val opts:LBFGS.Opts = new LBFGS.Options) extends Updater {
       }
     }
     stepn.set(1f/nsteps);
-    val nmats = modelmats.length;
-    val mlen = modelmats(0).ncols;
-    val pk  = zeros(modelmats(0).nrows, modelmats(0).ncols);
-    val eye = zeros(modelmats(0).ncols, modelmats(0).ncols);
-    
+    var nmats = modelmats.length;
+    var mlen = modelmats(0).ncols;
+//    var pk  = zeros(modelmats(0).nrows, modelmats(0).ncols);
+ 
  //   var Hk  = zeros(modelmats(0).ncols, modelmats(0).ncols);
    
-    for(i<-0 until mlen){eye(i,i)=1.0f;}
+  
     
   //  var vk:FMat = eye;
   //  var Hk = eye;
     //  println("u2 sumsq %g" format mini(sumSq(0)).dv)
     for (i <- 0 until nmats) {
-      var mm = modelmats(i);
-      var um = updatemats(i);
+ //     var mm = modelmats(i);
+ //     var um = updatemats(i);
+       myY = - updatemats(i) - myYY(i);
+   //   println(mm);
+   //   println(um);
+    //  println(myY);
+   //   println( myY );
+       
+   //   mydW(i) = mydW(i) - updatemats(i);
+        myS = mydW(i); //updatemats(i);
+    //  println(myS);
     //  var yk1 = myY;
     //  var sk1 = myS;
       
@@ -154,26 +175,47 @@ class LBFGS(override val opts:LBFGS.Opts = new LBFGS.Options) extends Updater {
    //     var sk = (myS(j,?)).t;
    //     println(yk);
           
-        val rho = (1/(norm((myY(j,?)).t ^* (myS(j,?)).t) ));
-        val max1 = ( (rho)>0f) ;
+       
+        var max1 = ( (norm((myY(j,?))))>0f)&&( (norm((myS(j,?))))>0f) ;
+       
         if(max1){
-        val vk = ( eye - (((myY(j,?)).t *^ (myS(j,?)).t)*(rho) ) );
-        val rk = ((myS(j,?)).t *^ (myS(j,?)).t)*(rho);
-        val Hk = ( (vk ^* vk) + rk);
+          
+        rho ~ 1 / ( norm( (myY(j,?)).t ^* (myS(j,?)).t ) ) ;
+     //   println(rho); 
+        var max2 = (norm(rho)>0f);
+         if(max2){
+        vk ~  eye + (-( ( (myY(j,?)).t *^ (myS(j,?)).t ) * (rho) )) ;
+        rk ~ ( (myS(j,?)).t *^ (myS(j,?)).t ) * (rho);
+        Hk ~  (vk ^* vk) + rk;
       //  println(Hk);
       //  var pk1 = (tmp1(j,?) * Hk);
-         myS(j,?) = (tmp1(j,?) * Hk);
+         myS(j,?) = (tmp1(j,?)) * Hk;
+//          myS(j,?) = -tmp1(j,?); 
        // println(pk1,pk);
-        }else{
-         myS(j,?) = tmp1(j,?); 
-        }//else
+         }
+         }//if max1
+        else{
+         myS(j,?) = tmp1(j,?) ; 
+            
+           }//if else
+       //  println(myS);
         }//for(j)
        // println(tmp1);
      //   var tmp = ( pk );
-    //    println(pk);
-        modelmats(i) ~ modelmats(i) + myS;
+     //   println(myS);
+   //     for(k <-0 until 1000){
+        
+        modelmats(i) ~ modelmats(i) + (myS);
+        
         if (mask != null) modelmats(i) ~ modelmats(i) *@ mask;
+        mydW(i) = myS;  //to modify
+        
+        
+    //    println("modelmats");
     //    println(modelmats(i));
+     //    myYY(i) ~ (-modelmats(i)) + 0f;   //history d_updatemats
+     //    println( myYY(i) )
+        
     //    var newupdate = -updatemats(i);
     //    var dw = mydW(i);
     //    myS <-- pk;
@@ -184,14 +226,14 @@ class LBFGS(override val opts:LBFGS.Opts = new LBFGS.Options) extends Updater {
     //    } else{
     //      myY(i) <-- newupdate;
     //    }
-       myY <-- ( -updatemats(i) - mydW ); 
- //      println(myY(i));
+ 
+      
         
        // if (mask != null) modelmats(i) ~ modelmats(i) *@ mask;
       }//if(opts.waitsteps)
      //   println( mydW(i) );
-       mydW <-- -updatemats(i);
- //       println( mydW(i) );
+     //  mydW(i) ~ (-updatemats(i)) *@ one ; //history updatemats
+    //    println( mydW(i) );
     }//for i
   } //update
 } //class LBFGS updater

@@ -1,0 +1,1 @@
+/Users/Anna/workspace/my_projects/BIDMach/lib:/usr/local/cuda/lib::/Users/Anna/Library/Java/Extensions:/Library/Java/Extensions:/Network/Library/Java/Extensions:/System/Library/Java/Extensions:/usr/lib/java:.

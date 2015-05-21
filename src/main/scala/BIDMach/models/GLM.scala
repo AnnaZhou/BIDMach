@@ -669,7 +669,8 @@ object GLM {
     mopts.batchSize = math.min(10000, mat0.ncols/30 + 1)
     if (mopts.links == null) mopts.links = izeros(targ.nrows,1)
     mopts.links.set(4)
-    mopts.reg2weight = 1f
+    mopts.reg1weight = 0.1f
+    mopts.reg2weight = 0.1f
     val model = new GLM(mopts)
     val mm = new Learner(
         new MatDS(Array(mat0, targ), mopts), 
@@ -701,7 +702,8 @@ object GLM {
     mopts.batchSize = math.min(10000, mat0.ncols/30 + 1)
     if (mopts.links == null) mopts.links = izeros(targ.nrows,1)
     mopts.links.set(4)
-    mopts.reg2weight = 1f
+    mopts.reg1weight = 0.1f
+    mopts.reg2weight = 0.1f
     nopts.links = mopts.links
     nopts.batchSize = mopts.batchSize
     nopts.putBack = 1

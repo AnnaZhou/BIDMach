@@ -8,8 +8,16 @@ class L1Regularizer(override val opts:L1Regularizer.Opts = new L1Regularizer.Opt
    def compute(mats:Array[Mat], step:Float) = {
      for (i <- 0 until opts.r1nmats) {
        val v = if (opts.reg1weight.ncols == 1) - opts.reg1weight else - opts.reg1weight(?,i);
+       myYY(i) ~ (-updatemats(i)) + 0f  //java.lang.NullPointerException
+     //  mydW(i) ~ ((updatemats(i))) + 0f 
+     //  println( modelmats(i) )
+       
        updatemats(i) ~ updatemats(i) + (sign(modelmats(i)) ∘  v) 
-       mydW(i) ~ (-(sign(modelmats(i)))) ∘  v  //java.lang.NullPointerException
+    //   mydW(i) ~ ((updatemats(i))) + 0f //(-(sign(modelmats(i)) ∘  v)) 
+    //   myYY(i) ~ updatemats(i) //0f + (-(sign(modelmats(i))) ∘  v) 
+    //   println(myYY(i))
+    //   println(mydW(i))
+   //    println(modelmats(i))
      }
    }
    
@@ -26,8 +34,14 @@ class L2Regularizer(override val opts:L2Regularizer.Opts = new L2Regularizer.Opt
    def compute(mats:Array[Mat], step:Float) = {
   	 for (i <- 0 until opts.r2nmats) {
   	   val v = if (opts.reg2weight.ncols == 1) - opts.reg2weight else - opts.reg2weight(?,i);
-  	   updatemats(i) ~ updatemats(i) + (modelmats(i) ∘  v)
-       mydW(i) ~ (-modelmats(i)) ∘  v
+       myYY(i) ~ (-updatemats(i)) + 0f
+   //    mydW(i) ~ (-(updatemats(i))) + 0f  
+  	 //  println( modelmats(i) )
+     //  println(updatemats(i))
+       updatemats(i) ~ updatemats(i) + (modelmats(i) ∘  v)
+    //   mydW(i) ~ ((updatemats(i))) + 0f //+(-(modelmats(i) ∘  v)) 
+    //   myYY(i) ~ 0f + (-(modelmats(i) ∘  v))
+    //   println(myYY(i))
   	 }
    }
    
