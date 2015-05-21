@@ -9,6 +9,7 @@ abstract class Mixin(val opts:Mixin.Opts = new Mixin.Options) {
   var modelmats:Array[Mat] = null
   var updatemats:Array[Mat] = null
   var mydW:Array[Mat] = null
+  var myYY:Array[Mat] = null
   
   def compute(mats:Array[Mat], step:Float)
   
@@ -18,6 +19,7 @@ abstract class Mixin(val opts:Mixin.Opts = new Mixin.Options) {
     modelmats = model.modelmats
     updatemats = model.updatemats
     mydW = model.mydW
+    myYY = model.myYY  
   }
 }
 

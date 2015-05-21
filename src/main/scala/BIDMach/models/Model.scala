@@ -42,6 +42,7 @@ abstract class Model(val opts:Model.Opts = new Model.Options) {
   var refresh = true
    
   var mydW:Array[Mat] = null
+  var myYY:Array[Mat] = null
    
   def copyTo(mod:Model) = {
     mod.datasource = datasource;
@@ -50,6 +51,7 @@ abstract class Model(val opts:Model.Opts = new Model.Options) {
     mod.mats = mats;
     mod.gmats = gmats;
     mod.mydW = mydW;
+    mod.myYY = myYY;
   }
   
   def bind(ds:DataSource):Unit = {
