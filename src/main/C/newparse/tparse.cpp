@@ -288,26 +288,24 @@ stringIndexer::
 
 typedef vector<stringIndexer> srivector;
 
-int parseLine(char * line, int lineno, const char * delim1, ivector & tvec, 
+int parseLine(char * line, int membuf, int lineno, const char * delim1, ivector & tvec, 
 	       svector & delims, srivector & srv, ftvector & out, int grpsize) {
   int i, ival;
   int64 dival;
   qint qval;
   float fval;
   double dval;
-  char * here, * next;
+  char * here, * next; 
 
   here = line;
   for (i = 0; i < tvec.size(); i++) {
-    if (i < tvec.size()-1) {
-      next = strpbrk(here, delim1);
-      if (!next) {
-	cerr << "parseLine: format error line " << lineno << endl;
-	cerr << "  contents: " << line << " ... " << here << endl;
-	throw 10;
-      }
-      *(next++) = 0;
+    next = strpbrk(here, delim1);
+    if (!next && i < tvec.size()-1) {
+      cerr << "parseLine: format error line " << lineno << endl;
+      cerr << "  contents: " << line << " ... " << here << endl;
+      throw 10;
     }
+    if (next && *next) *(next++) = 0;
     switch (tvec[i]) {
     case ftype_int:
       sscanf(here, "%d", &ival);
@@ -393,12 +391,12 @@ int parseLine(char * line, int lineno, const char * delim1, ivector & tvec,
 string getfield(char * line, const char * delim1, int k);
 
 int parseFormat(string ffname, ivector & tvec, svector & dnames, svector & delims, int *grpsize) {
-  ifstream ifstr(ffname.c_str());
-  if (ifstr.bad() || ifstr.eof()) {
+  ifstream ifstr(ffname.c_str(), ios::in);
+  if (ifstr.fail() || ifstr.eof()) {
     cerr << "couldnt open format file" << endl;
     throw;
   }
-  char *next, *third, *linebuf = new char[80];
+  char *next, *third, *newstr, *linebuf = new char[80];
   while (!ifstr.bad() && !ifstr.eof()) {
     ifstr.getline(linebuf, 80);
     if (strlen(linebuf) > 1) {
@@ -429,7 +427,9 @@ int parseFormat(string ffname, ivector & tvec, svector & dnames, svector & delim
       } else if (strncmp(linebuf, "string", 6) == 0) {
 	tvec.push_back(ftype_string);
 	ifstr.getline(linebuf, 80);
-	delims.push_back(linebuf);
+        newstr = new char[strlen(linebuf)+1];
+        strcpy(newstr, linebuf);
+	delims.push_back(newstr);
       } else if (strncmp(linebuf, "date", 4) == 0) {
 	tvec.push_back(ftype_date);
 	delims.push_back("");
@@ -543,7 +543,7 @@ int main(int argc, char ** argv) {
     if (strlen(linebuf) > 0) {
       jmax++;
       try {
-        parseLine(linebuf, ++iline, fdelim.c_str(), tvec, delims, srv, ftv, grpsize);
+        parseLine(linebuf, membuf, ++iline, fdelim.c_str(), tvec, delims, srv, ftv, grpsize);
       } catch (int e) {
         cerr << "Continuing" << endl;
       }
@@ -579,11 +579,11 @@ int main(int argc, char ** argv) {
       srv[i].writeMap(mfname + dnames[i], suffix);
       break;
     case ftype_string: case ftype_group: 
-      ftv[i].writeIVecs(ofname + dnames[i] + ".smat" + suffix);
+      ftv[i].writeIVecs(ofname + dnames[i] + ".imat" + suffix);
       srv[i].writeMap(mfname + dnames[i], suffix);
       break;
     case ftype_igroup:
-      ftv[i].writeIVecs(ofname + dnames[i] + ".smat" + suffix);
+      ftv[i].writeIVecs(ofname + dnames[i] + ".imat" + suffix);
       break;
     case ftype_digroup:
       ftv[i].writeDIVecs(ofname + dnames[i]);

@@ -60,7 +60,7 @@ if [ "$OS" = "apple" ] ; then
 	JAVA_HOME=`/usr/libexec/java_home`
     fi
     CUDA_HOME="/usr/local/cuda"
-    CC="gcc"
+    CC="icc"
     GCC="g++"
     NVCC="nvcc"
     NVCCFLAGS="-c -ccbin=clang -use_fast_math  -I$BIDMACH_ROOT/jni/include \
@@ -72,9 +72,9 @@ if [ "$OS" = "apple" ] ; then
     OBJ="o"
     OUTFLG="-o "
     CPPFLAGS="-fPIC -c -O2 -g -DNDEBUG -I$JAVA_HOME/include  -I$JAVA_HOME/include/darwin -I$BIDMACH_ROOT/jni/include -I$CUDA_HOME/include"
-    CFLAGS="-fPIC -c -O2 -g -DNDEBUG -I$JAVA_HOME/include  -I$JAVA_HOME/include/darwin -I$MKL_ROOT/include -I$MKL_ROOT/include/${ARCHD}${SUBDIR}"
+    CFLAGS="-openmp -fPIC -c -O2 -g -DNDEBUG -I$JAVA_HOME/include  -I$JAVA_HOME/include/darwin -I$MKL_ROOT/include -I$MKL_ROOT/include/${ARCHD}${SUBDIR}"
     LB="ar rc"    
-    LD="g++ -shared"
+    LD="icc -dynamiclib"
     GLD="nvcc -shared -Xlinker -rpath -Xlinker ${CUDA_HOME}/lib -lstdc++"
     LDFLAGS="$LDFLAGS"
     LIBPREPEND="lib"
@@ -106,7 +106,7 @@ elif [ "$OS" = "linux" ] ; then
     JAVA_HOME="/usr/java/default"
     fi
     CUDA_HOME="/usr/local/cuda"
-    CC="gcc"
+    CC="icc"
     GCC="g++"
     NVCC="nvcc"
     NVCCFLAGS="-c -use_fast_math -I$BIDMACH_ROOT/jni/include \
@@ -118,10 +118,10 @@ elif [ "$OS" = "linux" ] ; then
     OBJ="o"
     OUTFLG="-o "
     CPPFLAGS="-fPIC -c -O2 -DNDEBUG  -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -I$BIDMACH_ROOT/jni/include -I$CUDA_HOME/include" 
-    CFLAGS="-fPIC -c -O2 -DNDEBUG -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -I$MKL_ROOT/include -I$MKL_ROOT/include/${ARCHD}${SUBDIR}"
+    CFLAGS="-openmp -fPIC -c -O2 -DNDEBUG -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -I$MKL_ROOT/include -I$MKL_ROOT/include/${ARCHD}${SUBDIR}"
     LB="ar rc"    
     GLD="g++ -shared"
-    LD="g++ -shared -z noexecstack"
+    LD="icc -shared -static-intel -z noexecstack"
     LDFLAGS="$LDFLAGS"
     LIBPREPEND="lib"
     LIBAPPEND="-${OS}-${ARCH}.so"
@@ -131,14 +131,10 @@ elif [ "$OS" = "linux" ] ; then
     FORTRAN_LIBS="-lgfortran"
     if [ "$PARLIB" = "sequential" ] ; then
 	    MKL_LIBS="-L$JAVA_HOME/lib -L${BIDMACH_ROOT}/lib \
-            -Wl,--start-group $MKL_ROOT/lib/${ARCHD}/libmkl_intel${PTYPE}.a \
-            $MKL_ROOT/lib/${ARCHD}/libmkl_core.a $MKL_ROOT/lib/${ARCHD}/libmkl_sequential.a \
-            -Wl,--end-group -lpthread -lm"
+             -lpthread -lm"
     else 
-	    MKL_LIBS="-L$JAVA_HOME/lib -L${BIDMACH_ROOT}/lib/${ARCHD} \
-            -Wl,--start-group $MKL_ROOT/lib/${ARCHD}/libmkl_intel${PTYPE}.a \
-            $MKL_ROOT/lib/${ARCHD}/libmkl_core.a $MKL_ROOT/lib/${ARCHD}/libmkl_intel_thread.a \
-            -Wl,--end-group -liomp5 -ldl -lpthread -lm"
+	    MKL_LIBS="-L$JAVA_HOME/lib -L${BIDMACH_ROOT}/lib \
+             -liomp5 -ldl -lpthread -lm"
     fi
     if [ "$ARCH" = "x86" ] ; then
         CULIB="lib"
@@ -150,19 +146,19 @@ elif [ "$OS" = "linux" ] ; then
 elif [ "$OS" = "windows" ] ; then
     CUDA_HOME="$CUDA_PATH"
     MKL_ROOT="$MKLROOT"
-    CC="cl"
+    CC="icl"
     GCC="cl"
     NVCC="nvcc"
     OBJ="obj"
     OUTFLG="/OUT:"
-    CFLAGS="/c /MT /DNDEBUG /O2 /EHsc $CFLAGS"    # static linking
+    CFLAGS="/openmp /c /MT /DNDEBUG /O2 /EHsc $CFLAGS"    # static linking
     CPPFLAGS="/c /MT /DNDEBUG /O2 /EHsc $CFLAGS"    # static linking
     NVCCFLAGS="-c -use_fast_math  -I$BIDMAT_ROOT/jni/include \
           -gencode arch=compute_20,code=sm_20 \
           -gencode arch=compute_30,code=sm_30 \
           -gencode arch=compute_35,code=sm_35 \
           -gencode arch=compute_50,code=sm_50 \
-          --machine ${MBITS}  -Xcompiler \"/EHsc /W3 /nologo /O2 /Zi  /MT\""
+          --machine ${MBITS} -Xcompiler \"/EHsc /W3 /nologo /O2 /Zi /wd4661 /wd4267 /MT\""
     LB="lib"    
     LD="link"
     GLD="link"
@@ -183,9 +179,9 @@ elif [ "$OS" = "windows" ] ; then
     LAPACK_INCLUDES=""
     FORTRAN_LIBS=""
     if [ "$PARLIB" = "sequential" ] ; then
-	    MKL_LIBS="mkl_intel${PTYPE}.lib mkl_sequential.lib mkl_core.lib libiomp5mt.lib"   
+	    MKL_LIBS=""
     else
-	    MKL_LIBS="mkl_intel${PTYPE}.lib mkl_intel_thread.lib mkl_core.lib libiomp5mt.lib" 
+	    MKL_LIBS="libiomp5md.lib"
     fi
     INSTALL_DIR="${BIDMACH_ROOT}/lib"
     CUDA_LIBS="cudart.lib"

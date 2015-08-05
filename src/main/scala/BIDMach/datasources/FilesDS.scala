@@ -21,6 +21,8 @@ class FilesDS(override val opts:FilesDS.Opts = new FilesDS.Options)(implicit val
   var permfn:(Int)=>Int = null
   var totalSize = 0
   var fprogress:Float = 0
+  var lastMat:Array[Mat] = null;
+  var lastFname:Array[String] = null;
   
   def softperm(nstart:Int, nend:Int) = {
     val dd1 = nstart / 24
@@ -57,12 +59,14 @@ class FilesDS(override val opts:FilesDS.Opts = new FilesDS.Options)(implicit val
     fileno = nstart;                                                           // Number of the current output file      
     matqueue = new Array[Array[Mat]](math.max(1,opts.lookahead))               // Queue of matrices for each output matrix
     for (i <- 0 until math.max(1,opts.lookahead)) {
-      matqueue(i) = new Array[Mat](fnames.size)
+      matqueue(i) = new Array[Mat](fnames.size);
     }
-    for (i <- 0 until opts.lookahead) {
-      Future {
-        prefetch(nstart + i)
-      }
+    if (opts.putBack < 0) {
+    	for (i <- 0 until opts.lookahead) {
+    		Future {
+    			prefetch(nstart + i);
+    		}
+    	}
     }
   }
   
@@ -96,7 +100,11 @@ class FilesDS(override val opts:FilesDS.Opts = new FilesDS.Options)(implicit val
       val ifilex = ifile % math.max(opts.lookahead, 1)
       ready(ifilex) = ifile - math.max(1, opts.lookahead)
     } 
-    totalSize = nend - nstart
+    totalSize = nend - nstart;
+    lastMat = new Array[Mat](fnames.size);
+    lastFname = new Array[String](fnames.size);
+    for (i <- 0 until lastMat.length) {lastMat(i) = null;}
+    for (i <- 0 until lastFname.length) {lastFname(i) = null;}
   }
   
   def init = {
@@ -129,7 +137,7 @@ class FilesDS(override val opts:FilesDS.Opts = new FilesDS.Options)(implicit val
     	var nrow = rowno;
     	val filex = fileno % math.max(1, opts.lookahead);
 //    	        println("todo %d, fileno %d, filex %d, rowno %d" format (todo, fileno, filex, rowno))
-    	if (opts.lookahead > 0) {
+    	if (opts.putBack < 0 && opts.lookahead > 0) {
     	  while (ready(filex) < fileno) Thread.`yield`
     	} else {
     	  fetch
@@ -236,10 +244,16 @@ class FilesDS(override val opts:FilesDS.Opts = new FilesDS.Options)(implicit val
       val pnew = permfn(fileno);
       val fexists = fileExists(fnames(0)(pnew)) && (rand(1,1).v <= opts.sampleFiles);
       for (i <- 0 until fnames.size) {
+        if (fexists && lastMat(i).asInstanceOf[AnyRef] != null) {
+          HMat.saveMat(lastFname(i), lastMat(i));
+        }
         matqueue(0)(i) = if (fexists) {
-          HMat.loadMat(fnames(i)(pnew), matqueue(0)(i));  
+          val tmp = HMat.loadMat(fnames(i)(pnew), matqueue(0)(i));
+          lastFname(i) = fnames(i)(pnew);
+          lastMat(i) = tmp;
+          tmp;
         } else {
-          if (opts.throwMissing) {
+          if ((opts.sampleFiles >= 1.0f) && opts.throwMissing) {
             throw new RuntimeException("Missing file "+fnames(i)(pnew));
           }
           null;              
@@ -261,6 +275,31 @@ class FilesDS(override val opts:FilesDS.Opts = new FilesDS.Options)(implicit val
 
 
 object FilesDS {
+  
+  def apply(opts:FilesDS.Opts, nthreads:Int):FilesDS = {
+    implicit val ec = threadPool(nthreads);
+    new FilesDS(opts);
+  }
+  
+  def apply(opts:FilesDS.Opts):FilesDS = apply(opts, 4);
+  
+  def apply(fname:String, opts:FilesDS.Opts, nthreads:Int):FilesDS = {
+    opts.fnames = List(simpleEnum(fname, 1, 0));
+    implicit val ec = threadPool(nthreads);
+    new FilesDS(opts);
+  }
+  
+  def apply(fname:String, opts:FilesDS.Opts):FilesDS = apply(fname, opts, 4);
+  
+  def apply(fname:String):FilesDS = apply(fname, new FilesDS.Options, 4);
+  
+  def apply(fn1:String, fn2:String, opts:FilesDS.Opts, nthreads:Int) = {
+    opts.fnames = List(simpleEnum(fn1, 1, 0), simpleEnum(fn2, 1, 0));
+    implicit val ec = threadPool(nthreads);
+    new FilesDS(opts);
+  }
+  
+  def apply(fn1:String, fn2:String, opts:FilesDS.Opts):FilesDS = apply(fn1, fn2, opts, 4);
   
   def encodeDate(yy:Int, mm:Int, dd:Int, hh:Int) = (((12*yy + mm) * 31) + dd)*24 + hh
   

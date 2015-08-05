@@ -1,0 +1,13 @@
+
+val output = loadFMat("ica_output.txt")
+val (nn, opts) = BIDMach.models.ICA.learner(output)
+opts.npasses = 20
+nn.train
+
+val predW = FMat(nn.modelmats(0))
+val predMean = FMat(nn.modelmats(1))
+predMean.t
+
+val result = FMat(predW * (output - predMean))
+HMat.saveFMatTxt("ica_pred_source.txt", result)
+sys.exit

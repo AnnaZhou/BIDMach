@@ -26,15 +26,15 @@ if [ ! -e docword.txt.gz ]; then
     ${WGET} http://archive.ics.uci.edu/ml/machine-learning-databases/bag-of-words/docword.${1}.txt.gz
     mv docword.${1}.txt.gz docword.txt.gz
 fi 
-if [ ! -e vocab.${1}.txt ]; then
+if [ ! -e vocab.txt ]; then
     ${WGET} http://archive.ics.uci.edu/ml/machine-learning-databases/bag-of-words/vocab.${1}.txt
     mv vocab.${1}.txt vocab.txt
 fi 
 
 echo "Uncompressing docword.${1}.txt.gz"
 gunzip -c "docword.txt.gz" | tail -n +4 > "docword.txt"
-${BIDMACH_SCRIPTS}/../bin/tparse.exe -i "docword.txt" -f "${UCI}/../../uci_fmt.txt" -o "" -m "" -d " " -c
-${BIDMACH_SCRIPTS}/../bin/tparse.exe -i "vocab.txt" -f "${UCI}/../../uci_wfmt.txt" -o "" -m "" -c
+${BIDMACH_SCRIPTS}/../cbin/tparse.exe -i "docword.txt" -f "${UCI}/../../uci_fmt.txt" -o "" -m "" -d " " -c
+${BIDMACH_SCRIPTS}/../cbin/tparse.exe -i "vocab.txt" -f "${UCI}/../../uci_wfmt.txt" -o "" -m "" -c
 cd ${BIDMACH_SCRIPTS}/..
 cd ${UCI}
 ${BIDMACH_SCRIPTS}/../bidmach ${BIDMACH_SCRIPTS}/getuci.ssc

@@ -61,7 +61,7 @@ class NMF(opts:NMF.Opts = new NMF.Options) extends FactorModel(opts) {
     }
   }
   
-  override def uupdate(sdata:Mat, user:Mat, ipass:Int) = {
+  override def uupdate(sdata:Mat, user:Mat, ipass:Int, pos:Long) = {
 	if (putBack < 0 || ipass == 0) user.set(1f)
 	val modeldata = mm * sdata
   	val mmu = mm *^ mm + udiag
@@ -73,7 +73,7 @@ class NMF(opts:NMF.Opts = new NMF.Options) extends FactorModel(opts) {
     }
   }  
   
-  override def mupdate(sdata:Mat, user:Mat, ipass:Int):Unit = {
+  override def mupdate(sdata:Mat, user:Mat, ipass:Int, pos:Long):Unit = {
     val uu = user *^ user + mdiag *@ (1.0f*size(user,2)/opts.nusers) 
     updatemats(0) ~ (user *^ sdata) *@ mm
     updatemats(1) ~ uu * mm
@@ -86,7 +86,7 @@ class NMF(opts:NMF.Opts = new NMF.Options) extends FactorModel(opts) {
     updatemats(1) ~ uu * mm
   }
   
-  override def evalfun(sdata:Mat, user:Mat, ipass:Int):FMat = {
+  override def evalfun(sdata:Mat, user:Mat, ipass:Int, pos:Long):FMat = {
     if (opts.doubleScore) {
       evalfunx(sdata, user)
     } else {
@@ -144,7 +144,6 @@ object NMF  {
     class xopts extends Learner.Options with NMF.Opts with MatDS.Opts with IncNorm.Opts
     val opts = new xopts
     opts.dim = d
-    opts.putBack = 1
     opts.uiter = 2
     opts.batchSize = math.min(100000, mat0.ncols/30 + 1)
   	val nn = new Learner(
@@ -160,7 +159,6 @@ object NMF  {
     class xopts extends Learner.Options with NMF.Opts with MatDS.Opts with BatchNorm.Opts
     val opts = new xopts
     opts.dim = d
-    opts.putBack = 1
     opts.uiter = 1
     opts.batchSize = math.min(100000, mat0.ncols/30 + 1)
     val nn = new Learner(
@@ -187,47 +185,7 @@ object NMF  {
   			opts)
     (nn, opts)
   }
-  
-  def learnFParx(
-    nstart:Int=FilesDS.encodeDate(2012,3,1,0), 
-		nend:Int=FilesDS.encodeDate(2012,12,1,0), 
-		d:Int = 256
-		) = {
-  	class xopts extends ParLearner.Options with NMF.Opts with SFilesDS.Opts with IncNorm.Opts
-  	val opts = new xopts
-  	opts.dim = d
-  	opts.npasses = 4
-  	opts.resFile = "/big/twitter/test/results.mat"
-  	val nn = new ParLearnerxF(
-  	    null, 
-  			(dopts:DataSource.Opts, i:Int) => Experiments.Twitter.twitterWords(nstart, nend, opts.nthreads, i), 
-  			opts, mkNMFmodel _, 
-  			null, null, 
-  	    opts, mkUpdater _,
-  	    opts
-  	)
-  	(nn, opts)
-  }
-  
-  def learnFPar(
-    nstart:Int=FilesDS.encodeDate(2012,3,1,0), 
-		nend:Int=FilesDS.encodeDate(2012,12,1,0), 
-		d:Int = 256
-		) = {	
-  	class xopts extends ParLearner.Options with NMF.Opts with SFilesDS.Opts with IncNorm.Opts
-  	val opts = new xopts
-  	opts.dim = d
-  	opts.npasses = 4
-  	opts.resFile = "/big/twitter/test/results.mat"
-  	val nn = new ParLearnerF(
-  	    Experiments.Twitter.twitterWords(nstart, nend), 
-  	    opts, mkNMFmodel _, 
-  	    null, null, 
-  	    opts, mkUpdater _,
-  	    opts
-  	)
-  	(nn, opts)
-  }
+ 
 } 
 
 

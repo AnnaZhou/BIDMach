@@ -1,6 +1,6 @@
 package BIDMach.models
 
-import BIDMat.{Mat,SBMat,CMat,DMat,FMat,IMat,HMat,GMat,GIMat,GSMat,SMat,SDMat}
+import BIDMat.{Mat,SBMat,CMat,DMat,FMat,IMat,HMat,GDMat,GMat,GIMat,GSDMat,GSMat,SMat,SDMat}
 import BIDMat.MatFunctions._
 import BIDMat.SciFunctions._
 import BIDMach.datasources._
@@ -24,7 +24,7 @@ abstract class FactorModel(override val opts:FactorModel.Opts) extends Model(opt
     	val msum = sum(modelmat, 2);
     	modelmat ~ modelmat / msum;
     	setmodelmats(Array[Mat](1));
-    	modelmats(0) = if (opts.useGPU && Mat.hasCUDA > 0) GMat(modelmat) else modelmat;
+    	modelmats(0) = convertMat(modelmat);
     }
     
     if (mats.size > 1) {
@@ -38,26 +38,32 @@ abstract class FactorModel(override val opts:FactorModel.Opts) extends Model(opt
   } 
   
   
-  def uupdate(data:Mat, user:Mat, ipass:Int)
+  def uupdate(data:Mat, user:Mat, ipass:Int, pos:Long)
   
-  def mupdate(data:Mat, user:Mat, ipass:Int)
+  def mupdate(data:Mat, user:Mat, ipass:Int, pos:Long)
   
   def mupdate2(data:Mat, user:Mat, ipass:Int) = {}
   
-  def evalfun(data:Mat, user:Mat, ipass:Int):FMat
+  def evalfun(data:Mat, user:Mat, ipass:Int, pos:Long):FMat
   
-  def doblock(gmats:Array[Mat], ipass:Int, i:Long) = {
+  def evalfun(data:Mat, user:Mat, preds:Mat, ipass:Int, pos:Long):FMat = {zeros(0,0)}
+  
+  def dobatch(gmats:Array[Mat], ipass:Int, i:Long) = {
     val sdata = gmats(0)
-    val user = if (gmats.length > 1) gmats(1) else FactorModel.reuseuser(gmats(0), opts.dim, 1f)
-    uupdate(sdata, user, ipass)
-    mupdate(sdata, user, ipass)
+    val user = if (gmats.length > 1) gmats(1) else FactorModel.reuseuser(gmats(0), opts.dim, opts.initUval)
+    uupdate(sdata, user, ipass, i)
+    mupdate(sdata, user, ipass, i)
   }
   
-  def evalblock(mats:Array[Mat], ipass:Int, here:Long):FMat = {
+  def evalbatch(mats:Array[Mat], ipass:Int, here:Long):FMat = {
     val sdata = gmats(0)
-    val user = if (gmats.length > 1) gmats(1) else FactorModel.reuseuser(gmats(0), opts.dim, 1f)
-    uupdate(sdata, user, ipass)
-    evalfun(sdata, user, ipass)
+    val user = if (gmats.length > 1) gmats(1) else FactorModel.reuseuser(gmats(0), opts.dim, opts.initUval);
+    uupdate(sdata, user, ipass, here);
+    if (gmats.length > 2) {
+    	evalfun(sdata, user, gmats(2), ipass, here);
+    } else {
+    	evalfun(sdata, user, ipass, here);
+    }
   } 
 }
 
@@ -66,6 +72,7 @@ object FactorModel {
     var uiter = 5
     var weps = 1e-10f
     var minuser = 1e-8f
+    var initUval = 1f
   }
   
   def reuseuser(a:Mat, dim:Int, ival:Float):Mat = {
@@ -74,6 +81,8 @@ object FactorModel {
       case aa:FMat => FMat.newOrCheckFMat(dim, a.ncols, null, a.GUID, "FMat.reuseuser".##)
       case aa:GSMat => GMat.newOrCheckGMat(dim, a.ncols, null, a.GUID, "GSMat.reuseuser".##)
       case aa:GMat => GMat.newOrCheckGMat(dim, a.ncols, null, a.GUID, "GMat.reuseuser".##)
+      case aa:GDMat => GDMat.newOrCheckGDMat(dim, a.ncols, null, a.GUID, "GDMat.reuseuser".##)
+      case aa:GSDMat => GDMat.newOrCheckGDMat(dim, a.ncols, null, a.GUID, "GSDMat.reuseuser".##)
     }
     out.set(ival)
     out

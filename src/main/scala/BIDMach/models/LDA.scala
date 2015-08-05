@@ -72,7 +72,7 @@ class LDA(override val opts:LDA.Opts = new LDA.Options) extends FactorModel(opts
    *   multiplied by modelmats(0) to form sdata.
    * @param ipass Index of the pass over the data (0 = first pass, 1 = second pass, etc.).
    */
-  def uupdate(sdata:Mat, user:Mat, ipass:Int):Unit = {
+  def uupdate(sdata:Mat, user:Mat, ipass:Int, pos:Long):Unit = {
     if (putBack < 0 || ipass == 0) user.set(1f)
     for (i <- 0 until opts.uiter) {
       val preds = DDS(mm, user, sdata)	
@@ -95,7 +95,7 @@ class LDA(override val opts:LDA.Opts = new LDA.Options) extends FactorModel(opts
    *   multiplied by modelmats(0) to form sdata.
    * @param ipass Index of the pass over the data (0 = first pass, 1 = second pass, etc.).
    */
-  def mupdate(sdata:Mat, user:Mat, ipass:Int):Unit = {
+  def mupdate(sdata:Mat, user:Mat, ipass:Int, pos:Long):Unit = {
     val preds = DDS(mm, user, sdata)
     val dc = sdata.contents
     val pc = preds.contents
@@ -109,7 +109,7 @@ class LDA(override val opts:LDA.Opts = new LDA.Options) extends FactorModel(opts
   }
   
   /** 
-   * Evaluates model log-likelihood on a held-out batchof the input data.
+   * Evaluates model log-likelihood on a held-out batch of the input data.
    *  
    * @param sdata The word x document input data. Has dimension (# words x opts.batchSize), where batchSize is
    *   typically much smaller than the total number of documents, so sdata is usually a portion of the full input.
@@ -117,7 +117,7 @@ class LDA(override val opts:LDA.Opts = new LDA.Options) extends FactorModel(opts
    *   multiplied by modelmats(0) to form sdata.
    * @param ipass Index of the pass over the data (0 = first pass, 1 = second pass, etc.).
    */
-  def evalfun(sdata:Mat, user:Mat, ipass:Int):FMat = {  
+  def evalfun(sdata:Mat, user:Mat, ipass:Int, pos:Long):FMat = {  
   	val preds = DDS(mm, user, sdata);
   	val dc = sdata.contents;
   	val pc = preds.contents;
@@ -166,10 +166,13 @@ object LDA  {
     (nn, opts)
   }
   
+  class FsOpts extends Learner.Options with LDA.Opts with SFilesDS.Opts with IncNorm.Opts
+  
+  def learner(fpattern:String, d:Int):(Learner, FsOpts) = learner(List(FilesDS.simpleEnum(fpattern, 0, 1)), d)
+  
   /** Online Variational Bayes LDA algorithm with a files dataSource. */
-  def learner(fnames:List[(Int)=>String], d:Int) = {
-    class xopts extends Learner.Options with LDA.Opts with SFilesDS.Opts with IncNorm.Opts
-    val opts = new xopts
+  def learner(fnames:List[(Int)=>String], d:Int):(Learner, FsOpts) = { 
+    val opts = new FsOpts
     opts.dim = d
     opts.fnames = fnames
     opts.batchSize = 100000;
@@ -215,41 +218,22 @@ object LDA  {
     (nn, opts)
   }
   
-  /** Parallel online LDA algorithm with multiple file datasources. */ 
-  def learnFParx(
-      nstart:Int=FilesDS.encodeDate(2012,3,1,0), 
-      nend:Int=FilesDS.encodeDate(2012,12,1,0), 
-      d:Int = 256
-      ) = {
-  	class xopts extends ParLearner.Options with LDA.Opts with SFilesDS.Opts with IncNorm.Opts
-  	val opts = new xopts
-  	opts.dim = d
-  	opts.npasses = 4
-  	opts.resFile = "/big/twitter/test/results.mat"
-  	val nn = new ParLearnerxF(
-  	    null, 
-  	    (dopts:DataSource.Opts, i:Int) => Experiments.Twitter.twitterWords(nstart, nend, opts.nthreads, i), 
-  	    opts, mkLDAmodel _, 
-  	    null, null, 
-  	    opts, mkUpdater _,
-  	    opts
-  	)
-  	(nn, opts) 
-  }
+  class SFDSopts extends ParLearner.Options with LDA.Opts with SFilesDS.Opts with IncNorm.Opts
+  
+  def learnPar(fnames:String, d:Int):(ParLearnerF, SFDSopts) = learnPar(List(FilesDS.simpleEnum(fnames, 0, 1)), d);
   
   /** Parallel online LDA algorithm with one file datasource. */
-  def learnFPar(
-      nstart:Int=FilesDS.encodeDate(2012,3,1,0), 
-      nend:Int=FilesDS.encodeDate(2012,12,1,0), 
-      d:Int = 256
-      ) = {	
-  	class xopts extends ParLearner.Options with LDA.Opts with SFilesDS.Opts with IncNorm.Opts
-  	val opts = new xopts
-  	opts.dim = d
-  	opts.npasses = 4
-  	opts.resFile = "/big/twitter/test/results.mat"
+  def learnPar(fnames:List[(Int) => String], d:Int):(ParLearnerF, SFDSopts) = {
+  	val opts = new SFDSopts;
+  	opts.dim = d;
+  	opts.npasses = 4;
+    opts.fnames = fnames;
+    opts.batchSize = 100000;
+    opts.eltsPerSample = 500;
+  	opts.resFile = "../results.mat"
+  	implicit val threads = threadPool(4)
   	val nn = new ParLearnerF(
-  	    Experiments.Twitter.twitterWords(nstart, nend), 
+  	    new SFilesDS(opts),
   	    opts, mkLDAmodel _, 
   	    null, null, 
   	    opts, mkUpdater _,

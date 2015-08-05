@@ -2,7 +2,7 @@
 cd /opt/spark/ec2
 
 # launch a cluster
-./spark-ec2 -k "pils_rsa" -i /home/ec2-user/.ssh/jfc_rsa -s 32 --instance-type=m3.xlarge --region=us-west-2 launch sparkcluster
+./spark-ec2 -k "pils_rsa" -i /home/ec2-user/.ssh/jfc_rsa -s 2 --instance-type=r3.2xlarge --region=us-west-2 launch sparkcluster
 
 # ganglia patch
 
@@ -24,7 +24,10 @@ cp /etc/httpd/conf/httpd.conf /etc/httpd/conf/httpd_bkup.conf
 cp /home/ec2-user/httpd.conf /etc/httpd/conf/httpd.conf
 apachectl -k graceful
 
-spark/bin/spark-shell
+# need more driver memory for several models, e.g. multiclass and word2vec
+spark/bin/spark-shell 
+spark/bin/spark-shell --driver-memory 16g --conf "spark.driver.maxResultSize=8g"
+
 
 exit
 

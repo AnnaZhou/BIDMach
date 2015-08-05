@@ -10,13 +10,16 @@ import BIDMach._
 
 /**
 * Latent Dirichlet Model using repeated Gibbs sampling.
+* 
+* This version (v) supports per-model-element sample counts, 
+* e.g. for local heating or cooling of particular model coefficients. 
 *
 * Extends Factor Model Options with:
 - dim(256): Model dimension
 - uiter(5): Number of iterations on one block of data
 - alpha(0.001f) Dirichlet prior on document-topic weights
 - beta(0.0001f) Dirichlet prior on word-topic weights
-- nsamps(100) the number of repeated samples to take
+- nsamps(row(100)) matrix with the number of repeated samples to take
 *
 * Other key parameters inherited from the learner, datasource and updater:
 - blockSize: the number of samples processed in a block
@@ -48,20 +51,22 @@ class LDAgibbsv(override val opts:LDAgibbsv.Opts = new LDAgibbsv.Options) extend
   var mm:Mat = null
   var alpha:Mat = null
   var traceMem = false
+  var nsamps:Mat = null
   
   override def init() = {
     super.init
     if (refresh) {
     	mm = modelmats(0);
-    	//modelmats = new Array[Mat](2)
-    	setmodelmats(Array(mm, mm.ones(mm.nrows, 1), mm.ones(mm.nrows, mm.ncols)));
+    	setmodelmats(Array(mm, mm.ones(mm.nrows, 1)));
     }
     updatemats = new Array[Mat](2)
     updatemats(0) = mm.zeros(mm.nrows, mm.ncols)
     updatemats(1) = mm.zeros(mm.nrows, 1)
+    
+    nsamps = if (useGPU) GMat(opts.nsamps) else opts.nsamps
   }
   
-  def uupdate(sdata:Mat, user:Mat, ipass: Int):Unit = {
+  def uupdate(sdata:Mat, user:Mat, ipass: Int, pos:Long):Unit = {
     
      if (putBack < 0 || ipass == 0) user.set(1f)
     
@@ -79,7 +84,6 @@ class LDAgibbsv(override val opts:LDAgibbsv.Opts = new LDAgibbsv.Options) extend
 
      //val nsamps = GMat(opts.tempfunc(opts.nsampsi, ipass))
      //val nsamps = GMat(100 * ones(mm.ncols, 1))
-     val nsamps = modelmats(2);
         
      LDAgibbsv.LDAsample(mm, user, mnew, unew, preds, nsamps)
         
@@ -89,13 +93,13 @@ class LDAgibbsv(override val opts:LDAgibbsv.Opts = new LDAgibbsv.Options) extend
   
   }
   
-  def mupdate(sdata:Mat, user:Mat, ipass: Int):Unit = {
+  def mupdate(sdata:Mat, user:Mat, ipass: Int, pos:Long):Unit = {
 val um = updatemats(0)
 um ~ um + opts.beta
    sum(um, 2, updatemats(1))
   }
   
-  def evalfun(sdata:Mat, user:Mat, ipass:Int):FMat = {
+  def evalfun(sdata:Mat, user:Mat, ipass:Int, pos:Long):FMat = {
    val preds = DDS(mm, user, sdata)
    val dc = sdata.contents
    val pc = preds.contents
@@ -108,6 +112,11 @@ um ~ um + opts.beta
    val vv = ((pc ddot dc) - (sdat ddot suu))/sum(sdat,2).dv
    row(vv, math.exp(-vv))
   }
+  
+  // call this if nsamps matrix is changed during optimization
+  def updateSamps = {
+    nsamps <-- opts.nsamps;
+  }
 }
 
 object LDAgibbsv {
@@ -119,7 +128,7 @@ object LDAgibbsv {
   trait Opts extends FactorModel.Opts {
     var alpha = 0.001f
     var beta = 0.0001f
-    var nsamps = 1
+    var nsamps = row(1)
   }
   
   class Options extends Opts {}
