@@ -8,5 +8,5 @@ else
 endif
 
 install: all
-	mkdir -p ../../../../cbin
-	cp *.exe ../../../../cbin
+	mkdir -p ../../../../bin
+	cp *.exe ../../../../bin

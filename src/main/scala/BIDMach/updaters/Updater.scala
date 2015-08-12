@@ -8,9 +8,11 @@ import BIDMach.models._
 
 abstract class Updater(val opts:Updater.Opts = new Updater.Options) {
   var model:Model = null
+//  var model1:GLM =null
   
   def init(model0:Model) = {
     model = model0 
+//    model1 = model0.asInstanceOf[GLM];
   }
   
   def update(ipass:Int, step:Long):Unit

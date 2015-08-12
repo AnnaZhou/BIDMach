@@ -32,14 +32,11 @@ class KMeans(override val opts:KMeans.Opts = new KMeans.Options) extends Cluster
   
   override def init() = {
     super.init()
-    mm = modelmats(0);
     if (refresh) {
+    	mm = modelmats(0);
     	mmnorm = mm dotr mm;
     	setmodelmats(Array(mm, mmnorm));
     }
-    for (i <- 0 until modelmats.length) modelmats(i) = convertMat(modelmats(i))
-    mm = modelmats(0)
-    mmnorm = modelmats(1)
     um = updatemats(0)
     umcount = mm.zeros(mm.nrows, 1)
     updatemats = Array(um, umcount)
@@ -79,35 +76,6 @@ class KMeans(override val opts:KMeans.Opts = new KMeans.Options) extends Cluster
     }
     mmnorm ~ mm dotr mm;
   }
-  
-  override def mergeModelFn(models:Array[Model], mm:Array[Mat], um:Array[Mat], istep:Long) = {}
-  
-  override def mergeModelPassFn(models:Array[Model], mmx:Array[Mat], umx:Array[Mat], ipass:Int) = {
-    val nmodels = models.length;
-    mmx(0).clear
-    if (ipass == 0) {                     // on first pass, model is random samples, so take a mixed sample
-      val m0 = models(0).modelmats(0);
-      val isel = m0.zeros(m0.nrows, 1);
-      val vsel = min((nmodels-1).toFloat, floor(nmodels*rand(m0.nrows, 1)));
-      for (i <- 0 until nmodels) {
-        isel <-- (vsel == i.toFloat);
-        umx(0) <-- models(i).modelmats(0);
-        umx(0) ~ isel *@ umx(0);
-        mmx(0) ~ mmx(0) + umx(0);
-      }
-    } else {                              // on later passes, average the centers
-      for (i <- 0 until nmodels) {
-        umx(0) <-- models(i).modelmats(0);
-        mmx(0) ~ mmx(0) + umx(0);
-      }
-      mmx(0) ~ mmx(0) * (1f/nmodels);
-    }
-    mmx(1) ~ mmx(0) dotr mmx(0);
-    for (i <- 0 until nmodels) {
-    	models(i).modelmats(0) <-- mmx(0);
-    	models(i).modelmats(1) <-- mmx(1);
-    }
-  }
 }
 
 object KMeans  {
@@ -137,14 +105,13 @@ object KMeans  {
   	    new Batch(opts), opts)
     (nn, opts)
   }
-  class fsopts extends Learner.Options with KMeans.Opts with FilesDS.Opts with Batch.Opts
   
-  class memopts extends Learner.Options with KMeans.Opts with MatDS.Opts with Batch.Opts
   /**
    * KMeans with a files dataSource
    */
   def learner(fnames:List[(Int)=>String], d:Int) = {
-    val opts = new fsopts
+    class xopts extends Learner.Options with KMeans.Opts with FilesDS.Opts with Batch.Opts
+    val opts = new xopts
     opts.dim = d
     opts.fnames = fnames
     opts.batchSize = 10000;
@@ -156,26 +123,6 @@ object KMeans  {
   	    new Batch(opts), 
   	    opts)
     (nn, opts)
-  }
-  
-  def learner(fnames:String, d:Int):(Learner, fsopts) = learner(List(FilesDS.simpleEnum(fnames,1,0)), d) 
-  
-    // This function constructs a predictor from an existing model 
-  def predictor(model:Model, mat1:Mat, preds:Mat):(Learner, memopts) = {
-    val nopts = new memopts;
-    nopts.batchSize = math.min(10000, mat1.ncols/30 + 1)
-    nopts.putBack = 1
-    nopts.dim = model.opts.dim;
-    val newmod = new KMeans(nopts);
-    newmod.refresh = false
-    model.copyTo(newmod)
-    val nn = new Learner(
-        new MatDS(Array(mat1, preds), nopts), 
-        newmod, 
-        null,
-        null,
-        nopts)
-    (nn, nopts)
   }
    
   def learnPar(mat0:Mat, d:Int = 256) = {
@@ -194,26 +141,46 @@ object KMeans  {
     (nn, opts)
   }
   
-  class KSFopts extends ParLearner.Options with KMeans.Opts with FilesDS.Opts with Batch.Opts
-  
-  def learnPar(fnames:String, d:Int):(ParLearnerF, KSFopts) = learnPar(List(FilesDS.simpleEnum(fnames,1,0)), d)
-  
-  def learnPar(fnames:List[(Int)=>String], d:Int):(ParLearnerF, KSFopts) = {
-    val opts = new KSFopts
-    opts.dim = d
-    opts.npasses = 10
-    opts.fnames = fnames
-    opts.batchSize = 20000;
-    implicit val threads = threadPool(4)
-  	val nn = new ParLearnerF(
-  	    new FilesDS(opts), 
+  def learnFParx(
+      nstart:Int=FilesDS.encodeDate(2012,3,1,0), 
+      nend:Int=FilesDS.encodeDate(2012,12,1,0), 
+      d:Int = 256
+      ) = {
+  	class xopts extends ParLearner.Options with KMeans.Opts with SFilesDS.Opts with Batch.Opts
+  	val opts = new xopts
+  	opts.dim = d
+  	opts.npasses = 10
+  	opts.resFile = "/big/twitter/test/results.mat"
+  	val nn = new ParLearnerxF(
+  	    null, 
+  	    (dopts:DataSource.Opts, i:Int) => Experiments.Twitter.twitterWords(nstart, nend, opts.nthreads, i), 
   	    opts, mkKMeansModel _, 
   	    null, null, 
   	    opts, mkUpdater _,
-  	    opts)
-    (nn, opts)
+  	    opts
+  	)
+  	(nn, opts) 
   }
-
+  
+  def learnFPar(
+      nstart:Int=FilesDS.encodeDate(2012,3,1,0), 
+      nend:Int=FilesDS.encodeDate(2012,12,1,0), 
+      d:Int = 256
+      ) = {	
+  	class xopts extends ParLearner.Options with KMeans.Opts with SFilesDS.Opts with Batch.Opts
+  	val opts = new xopts
+  	opts.dim = d
+  	opts.npasses = 4
+  	opts.resFile = "/big/twitter/test/results.mat"
+  	val nn = new ParLearnerF(
+  	    Experiments.Twitter.twitterWords(nstart, nend), 
+  	    opts, mkKMeansModel _, 
+  	    null, null, 
+  	    opts, mkUpdater _,
+  	    opts
+  	)
+  	(nn, opts)
+  }
 }
 
 

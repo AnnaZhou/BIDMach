@@ -55,6 +55,32 @@ class L2Regularizer(override val opts:L2Regularizer.Opts = new L2Regularizer.Opt
 }
 
 
+class COCOARegularizer(override val opts:COCOARegularizer.Opts = new COCOARegularizer.Options) extends Mixin(opts) { 
+   def compute(mats:Array[Mat], step:Float) = {
+     for (i <- 0 until opts.r1nmats) {
+       val v = if (opts.reg1weight.ncols == 1) - opts.reg1weight else - opts.reg1weight(?,i);
+       myYY(i) ~ (-updatemats(i)) + 0f  //java.lang.NullPointerException
+     //  mydW(i) ~ ((updatemats(i))) + 0f 
+     //  println( modelmats(i) )
+       
+       updatemats(i) ~ updatemats(i) + (sign(modelmats(i)) ∘  v) 
+    //   mydW(i) ~ ((updatemats(i))) + 0f //(-(sign(modelmats(i)) ∘  v)) 
+    //   myYY(i) ~ updatemats(i) //0f + (-(sign(modelmats(i))) ∘  v) 
+    //   println(myYY(i))
+    //   println(mydW(i))
+   //    println(modelmats(i))
+     }
+   }
+   
+   def score(mats:Array[Mat], step:Float):FMat = {
+     val sc = zeros(opts.r1nmats,1)
+     for (i <- 0 until opts.r1nmats) {
+       sc(i) = mean(sum(abs(modelmats(i)),2)).dv
+     }
+     sc
+   }
+}
+
 object L1Regularizer {
 	trait Opts extends Mixin.Opts {
 		var reg1weight:FMat = 1e-7f
@@ -73,4 +99,13 @@ object L2Regularizer {
     class Options extends Opts {}
 }
 
+
+object COCOARegularizer {
+  trait Opts extends Mixin.Opts {
+    var reg1weight:FMat = 1e-7f
+    var r1nmats:Int = 1
+  }
+  
+  class Options extends Opts {}
+}
 

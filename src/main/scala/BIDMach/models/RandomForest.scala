@@ -42,8 +42,6 @@ import scala.concurrent.ExecutionContextExecutor
  * For floating point data, the leading nbits are used. So e.g. 16 float bits gives sign, 8 bits of exponent, 
  * and 7 bits of mantissa with a leading 1. 
  * 
- * The category labels in the cats matrix should be contiguous, non-negative integer labels starting with zero. 
- * 
  * For regression, discrete (integer) target values should be used in the training data. The output will be continuous
  * values interpolated from them.
  * 
@@ -237,32 +235,27 @@ class RandomForest(override val opts:RandomForest.Opts = new RandomForest.Option
     	outright = FMat(nsamps, nnodes);
     	jc = IMat(1, ntrees * nnodes * nsamps);
     	lout = LMat(1, batchSize * nsamps * ntrees);
+    	
     	if (useGPU) {
-    	  gpiones = giones(1, bsize);
+    		gfieldlengths = GIMat(fieldlengths);
+    		gpiones = giones(1, bsize);
     		gtmpinds = glzeros(1, bsize);
     		gtmpcounts = gizeros(1, bsize);
     		gout = GLMat(1, batchSize * nsamps * ntrees);
+    		gtnodes = GIMat(ntrees, batchSize);
+    		gfnodes = GMat(ntrees, batchSize);
+        gftree = GIMat(nnodes, 1);
+        gitree = GIMat(nnodes, 1);
+        gitrees = GIMat(itrees);
+        gftrees = GIMat(ftrees);
+        gvtrees = GIMat(vtrees);
+        gctrees = GMat(ctrees);
     	}
-    }
-    itrees = modelmats(0).asInstanceOf[IMat];
-    ftrees = modelmats(1).asInstanceOf[IMat];
-    vtrees = modelmats(2).asInstanceOf[IMat];
-    ctrees = modelmats(3).asInstanceOf[FMat];   	
-    if (useGPU) {
-    	gfieldlengths = GIMat(fieldlengths);
-    	gtnodes = GIMat(ntrees, batchSize);
-    	gfnodes = GMat(ntrees, batchSize);
-    	gftree = GIMat(nnodes, 1);
-    	gitree = GIMat(nnodes, 1);
-    	gitrees = GIMat(itrees);
-    	gftrees = GIMat(ftrees);
-    	gvtrees = GIMat(vtrees);
-    	gctrees = GMat(ctrees);
-    }    
+    }       
   } 
 
-  def dobatch(gmats:Array[Mat], ipass:Int, i:Long) = {
-    val data = full(gmats(0));
+  def doblock(gmats:Array[Mat], ipass:Int, i:Long) = {
+    val data = gmats(0);
     val cats = gmats(1);
     val t0 = toc;
 //    var blockv0:SVec = null;
@@ -306,7 +299,7 @@ class RandomForest(override val opts:RandomForest.Opts = new RandomForest.Option
     	blockv = gmakeV(gout, gpiones, gtmpinds, gtmpcounts);
     }
     case _ => {
-    	throw new RuntimeException("RandomForest dobatch types dont match %s %s" format (data.mytype, cats.mytype))
+    	throw new RuntimeException("RandomForest doblock types dont match %s %s" format (data.mytype, cats.mytype))
     }
     }
     lens0 += blockv.length;
@@ -320,9 +313,9 @@ class RandomForest(override val opts:RandomForest.Opts = new RandomForest.Option
     t5 = toc; runtimes(4) += t5 - t4; 
   }
 
-  def evalbatch(mats:Array[Mat], ipass:Int, here:Long):FMat = {
+  def evalblock(mats:Array[Mat], ipass:Int, here:Long):FMat = {
     val depth = if (opts.training) ipass else opts.depth
-    val data = full(gmats(0));
+    val data = gmats(0);
     val cats = gmats(1);
     val nnodes:Mat = if (gmats.length > 2) gmats(2) else null;
     val fnodes:FMat = zeros(ntrees, data.ncols);
@@ -345,8 +338,7 @@ class RandomForest(override val opts:RandomForest.Opts = new RandomForest.Option
     if (opts.regression) {
       var mm = mean(fnodes);
       if (datasource.opts.putBack == 1) {
-        val pcats = if (cats.nrows == 1) mm else mm on sqrt(variance(fnodes))
-        cats <-- pcats;
+        cats <-- mm;
       }
       val diff = mm - FMat(cats)
       if (opts.MAE) -mean(abs(diff)) else -(diff dotr diff)/diff.length
@@ -1350,9 +1342,10 @@ object RandomForest {
   
   class RFSopts extends RFopts with MatDS.Opts;
   
-  def learner(data:Mat, labels:Mat) = {
+  def learner(data:IMat, labels:IMat) = {
     val opts = new RFSopts;
-    opts.nbits = 16;
+    opts.useGPU = false;
+    opts.nbits = countbits(maxi(maxi(data)).dv.toInt);
     opts.batchSize = math.min(100000000/data.nrows, data.ncols);
     val nn = new Learner(
         new MatDS(Array(data, labels), opts), 
@@ -1375,20 +1368,9 @@ object RandomForest {
     (nn, opts)
   }
   
-  def predictor(model:Model, ds:DataSource, opts:RFopts):(Learner, RFopts) = {
+  def predictor(model:RandomForest, ds:DataSource, opts:RFopts):(Learner, RFopts) = {
     val nn = new Learner(
         ds, 
-        model,
-        null, 
-        new Batch(opts),
-        opts)
-    (nn, opts)
-  }
-  
-  def predictor(model:Model, data:Mat, preds:Mat):(Learner, RFopts) = {
-    val opts = model.opts.asInstanceOf[RFSopts];
-    val nn = new Learner(
-        new MatDS(Array(data, preds), opts),
         model,
         null, 
         new Batch(opts),

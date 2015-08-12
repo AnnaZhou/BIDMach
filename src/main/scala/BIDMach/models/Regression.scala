@@ -28,7 +28,7 @@ abstract class RegressionModel(override val opts:RegressionModel.Opts) extends M
   def init() = {
     useGPU = opts.useGPU && Mat.hasCUDA > 0
     val data0 = mats(0)
-    val m = data0.nrows;
+    val m = size(data0, 1)
     val targetData = mats.length > 1
     val d = if (opts.targmap.asInstanceOf[AnyRef] != null) {
       opts.targmap.nrows 
@@ -43,41 +43,36 @@ abstract class RegressionModel(override val opts:RegressionModel.Opts) extends M
     
     if (refresh) {
     	val mm = zeros(d,m);
-      setmodelmats(Array(mm))
+    	setmodelmats(Array(if (useGPU) GMat(mm) else mm));
     }
-    modelmats(0) = convertMat(modelmats(0));
     updatemats = Array(modelmats(0).zeros(modelmats(0).nrows, modelmats(0).ncols));
-<<<<<<< HEAD
     mydW = Array(modelmats(0).zeros(modelmats(0).nrows, modelmats(0).ncols));
     myYY = Array(modelmats(0).zeros(modelmats(0).nrows, modelmats(0).ncols));
     
     targmap = if (useGPU && opts.targmap.asInstanceOf[AnyRef] != null) GMat(opts.targmap) else opts.targmap
-=======
-    targmap = if (opts.targmap.asInstanceOf[AnyRef] != null) convertMat(opts.targmap) else opts.targmap
->>>>>>> upstream/master
     if (! targetData) {
-      targets = if (opts.targets.asInstanceOf[AnyRef] != null) convertMat(opts.targets) else opts.targets
-      mask =    if (opts.rmask.asInstanceOf[AnyRef] != null) convertMat(opts.rmask) else opts.rmask
+      targets = if (useGPU && opts.targets.asInstanceOf[AnyRef] != null) GMat(opts.targets) else opts.targets
+      mask =    if (useGPU && opts.rmask.asInstanceOf[AnyRef] != null) GMat(opts.rmask) else opts.rmask
     }
   } 
   
-  def mupdate(data:Mat, ipass:Int, i:Long)
+  def mupdate(data:Mat)
   
-  def mupdate2(data:Mat, targ:Mat, ipass:Int, i:Long)
+  def mupdate2(data:Mat, targ:Mat)
   
   def meval(data:Mat):FMat
   
   def meval2(data:Mat, targ:Mat):FMat
   
-  def dobatch(gmats:Array[Mat], ipass:Int, i:Long) = {
+  def doblock(gmats:Array[Mat], ipass:Int, i:Long) = {
     if (gmats.length == 1) {
-      mupdate(gmats(0), ipass, i)
+      mupdate(gmats(0))
     } else {
-      mupdate2(gmats(0), gmats(1), ipass, i)
+      mupdate2(gmats(0), gmats(1))
     }
   }
   
-  def evalbatch(mats:Array[Mat], ipass:Int, here:Long):FMat = {
+  def evalblock(mats:Array[Mat], ipass:Int, here:Long):FMat = {
     if (gmats.length == 1) {
       meval(gmats(0))
     } else {

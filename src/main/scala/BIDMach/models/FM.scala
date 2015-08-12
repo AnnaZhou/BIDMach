@@ -61,7 +61,7 @@ import BIDMach._
  * 
  */
 
-class FM(override val opts:FM.Opts = new FM.Options) extends RegressionModel(opts) {
+class FM(opts:FM.Opts) extends RegressionModel(opts) {
   
   var mylinks:Mat = null;
   var iweight:Mat = null;
@@ -96,13 +96,15 @@ class FM(override val opts:FM.Opts = new FM.Options) extends RegressionModel(opt
   override def init() = {
     super.init()
     mylinks = if (useGPU) GIMat(opts.links) else opts.links
-    iweight = if (opts.iweight.asInstanceOf[AnyRef] != null) convertMat(opts.iweight) else null
+    iweight = if (useGPU && opts.iweight.asInstanceOf[AnyRef] != null) GMat(opts.iweight) else opts.iweight
     if (refresh) {
     	mv = modelmats(0);
-    	mm1 = convertMat(normrnd(0, opts.initscale/math.sqrt(opts.dim1).toFloat, opts.dim1, mv.ncols));
-    	mm2 = convertMat(normrnd(0, opts.initscale/math.sqrt(opts.dim2).toFloat, opts.dim2, mv.ncols));
-    	ulim = convertMat(row(opts.lim))
-    	llim = convertMat(row(-opts.lim))
+    	val rmat1 = normrnd(0, opts.initscale/math.sqrt(opts.dim1).toFloat, opts.dim1, mv.ncols);
+    	mm1 = if (useGPU) GMat(rmat1) else rmat1;
+    	val rmat2 = normrnd(0, opts.initscale/math.sqrt(opts.dim2).toFloat, opts.dim2, mv.ncols)
+    	mm2 = if (useGPU) GMat(rmat2) else rmat2;
+    	ulim = if (useGPU) GMat(row(opts.lim)) else row(opts.lim)
+    	llim = if (useGPU) GMat(row(-opts.lim)) else row(-opts.lim)
     	setmodelmats(Array(mv, mm1, mm2));
     	if (mask.asInstanceOf[AnyRef] != null) {
     		mv ~ mv ∘ mask;
@@ -110,7 +112,6 @@ class FM(override val opts:FM.Opts = new FM.Options) extends RegressionModel(opt
     		mm2 ~ mm2 ∘ mask;
     	}
     }
-    (0 until 3).map((i) => modelmats(i) = convertMat(modelmats(i)))
     uv = updatemats(0)
     um1 = uv.zeros(opts.dim1, uv.ncols)
     um2 = uv.zeros(opts.dim2, uv.ncols)
@@ -121,7 +122,7 @@ class FM(override val opts:FM.Opts = new FM.Options) extends RegressionModel(opt
     }
   }
     
-  def mupdate(in:Mat, ipass:Int, pos:Long) = {
+  def mupdate(in:Mat) = {
     val targs = targets * in
     min(targs, 1f, targs)
     val alltargs = if (targmap.asInstanceOf[AnyRef] != null) targmap * targs else targs
@@ -129,7 +130,7 @@ class FM(override val opts:FM.Opts = new FM.Options) extends RegressionModel(opt
     mupdate3(in, alltargs, dweights)
   }
   
-  def mupdate2(in:Mat, targ:Mat, ipass:Int, pos:Long) = mupdate3(in, targ, null);
+  def mupdate2(in:Mat, targ:Mat) = mupdate3(in, targ, null);
   
   // Update the positive/negative factorizations
   def mupdate3(in:Mat, targ:Mat, dweights:Mat) = {
@@ -319,19 +320,15 @@ object FM {
   }
   
   // This function constructs a predictor from an existing model 
-  def predictor(model:Model, mat1:Mat, preds:Mat):(Learner, LearnOptions) = {
-    val mod = model.asInstanceOf[FM];
-    val mopts = mod.opts;
+  def predictor(model:Model, mat1:Mat, preds:Mat, d:Int):(Learner, LearnOptions) = {
     val nopts = new LearnOptions;
     nopts.batchSize = math.min(10000, mat1.ncols/30 + 1)
-    nopts.links = mopts.links.copy;
-    nopts.putBack = 1;
-    val newmod = new FM(nopts);
-    newmod.refresh = false
-    model.copyTo(newmod)
+    if (nopts.links == null) nopts.links = izeros(preds.nrows,1)
+    nopts.links.set(d)
+    nopts.putBack = 1
     val nn = new Learner(
         new MatDS(Array(mat1, preds), nopts), 
-        newmod, 
+        model, 
         null,
         null,
         nopts)

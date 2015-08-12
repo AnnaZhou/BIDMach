@@ -44,21 +44,23 @@ class KMeansw(override val opts:KMeansw.Opts = new KMeansw.Options) extends Mode
   
   
   def init() = {
+
     useGPU = opts.useGPU && Mat.hasCUDA > 0
     val data0 = mats(0)
     val nc = data0.ncols
     if (opts.dim > nc)
-      throw new RuntimeException("KMeansw need batchsize >= dim")
+      throw new RuntimeException("KMeanspp need batchsize >= dim")
     
     if (refresh) {
     	val rp = randperm(nc);
     	val mmi = full(data0(?,rp(0,0->opts.dim))).t;
-    	mm = convertMat(mmi);
+
+    	mm = if (useGPU) GMat(mmi) else mmi;
     	mcounts = mm.zeros(mm.nrows, 1);
     	mweights = mm.zeros(mm.nrows, 1);
     	setmodelmats(Array(mm, mcounts, mweights));
     }
-    for (i <- 0 until 3) modelmats(i) = convertMat(modelmats(i));
+    
     um = modelmats(0).zeros(mm.nrows, mm.ncols)
     umcounts = mm.zeros(mm.nrows, 1)
     umweights = mm.zeros(mm.nrows, 1)
@@ -67,7 +69,7 @@ class KMeansw(override val opts:KMeansw.Opts = new KMeansw.Options) extends Mode
   } 
 
   
-  def dobatch(gmats:Array[Mat], ipass:Int, i:Long) = {
+  def doblock(gmats:Array[Mat], ipass:Int, i:Long) = {
     if (gmats.length > 1) {
       mupdate(gmats(0), gmats(1), ipass)
     } else {
@@ -75,7 +77,7 @@ class KMeansw(override val opts:KMeansw.Opts = new KMeansw.Options) extends Mode
     }
   }
   
-  def evalbatch(gmats:Array[Mat], ipass:Int, here:Long):FMat = {
+  def evalblock(gmats:Array[Mat], ipass:Int, here:Long):FMat = {
     if (gmats.length > 1) {
       evalfun(gmats(0), gmats(1))
     } else {
@@ -134,13 +136,10 @@ object KMeansw  {
   def mkUpdater(nopts:Updater.Opts) = {
   	new IncNorm(nopts.asInstanceOf[IncNorm.Opts])
   } 
-  
-  class FsOpts extends Learner.Options with KMeansw.Opts with FilesDS.Opts with IncNorm.Opts
-  
-  class MemOpts extends Learner.Options with KMeansw.Opts with MatDS.Opts with IncNorm.Opts
    
   def learner(datamat:Mat, wghts:Mat, d:Int) = {
-    val opts = new MemOpts
+    class xopts extends Learner.Options with KMeansw.Opts with MatDS.Opts with IncNorm.Opts
+    val opts = new xopts
     opts.dim = d
     opts.batchSize = math.min(100000, datamat.ncols/30 + 1)
     opts.isprob = false
@@ -154,7 +153,8 @@ object KMeansw  {
   }
   
   def learner(datamat:Mat, d:Int) = {
-    val opts = new MemOpts
+    class xopts extends Learner.Options with KMeansw.Opts with MatDS.Opts with IncNorm.Opts
+    val opts = new xopts
     opts.dim = d
     opts.batchSize = math.min(100000, datamat.ncols/30 + 1)
     opts.isprob = false
@@ -165,23 +165,6 @@ object KMeansw  {
         null,
         new IncNorm(opts), opts)
     (nn, opts)
-  } 
-   
-  // This function constructs a predictor from an existing model 
-  def predictor(model:Model, mat1:Mat, preds:Mat, d:Int):(Learner, MemOpts) = {
-    val nopts = new MemOpts;
-    nopts.batchSize = math.min(10000, mat1.ncols/30 + 1)
-    nopts.putBack = 1
-    val newmod = new KMeansw(nopts);
-    newmod.refresh = false
-    model.copyTo(newmod)
-    val nn = new Learner(
-        new MatDS(Array(mat1, preds), nopts), 
-        newmod, 
-        null,
-        null,
-        nopts)
-    (nn, nopts)
   }
    
   def learnPar(mat0:Mat, d:Int = 256) = {

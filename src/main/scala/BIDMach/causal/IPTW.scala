@@ -46,12 +46,12 @@ class IPTW(opts:IPTW.Opts) extends RegressionModel(opts) {
     ustep = 0
   }
     
-  def mupdate(in:Mat, ipass:Int, pos:Long) = {
+  def mupdate(in:Mat) = {
     val targs = targets * in
-    mupdate2(in, targs, ipass, pos)
+    mupdate2(in, targs)
   }
   
-  def mupdate2(in:Mat, targ:Mat, ipass:Int, pos:Long) = {
+  def mupdate2(in:Mat, targ:Mat) = {
     val ftarg = full(targ)
     val treatment = ftarg.rowslice(0, ftarg.nrows/2);
     val outcome = ftarg.rowslice(ftarg.nrows/2, ftarg.nrows)

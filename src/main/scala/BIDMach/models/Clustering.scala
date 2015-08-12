@@ -18,13 +18,12 @@ abstract class ClusteringModel(override val opts:ClusteringModel.Opts) extends M
     useGPU = opts.useGPU && Mat.hasCUDA > 0
     val data0 = mats(0)
     val m = data0.nrows
-    if (refresh) {
-    	val mmi = rand(opts.dim, m);   
-    	setmodelmats(Array(mmi));
-    }
-    modelmats(0) = convertMat(modelmats(0))
+    val mmi = rand(opts.dim, m);
+    
+    setmodelmats(Array[Mat](1));
+    modelmats(0) = if (useGPU) GMat(mmi) else mmi
     updatemats = new Array[Mat](1)
-    updatemats(0) = modelmats(0).zeros(modelmats(0).nrows, modelmats(0).ncols)
+    updatemats(0) = modelmats(0).zeros(mmi.nrows, mmi.ncols)
     lastpos = 0;
   } 
   
@@ -34,7 +33,7 @@ abstract class ClusteringModel(override val opts:ClusteringModel.Opts) extends M
   
   def evalfun(data:Mat, targ:Mat):FMat = {col(0)}
   
-  def dobatch(gmats:Array[Mat], ipass:Int, here:Long) = {
+  def doblock(gmats:Array[Mat], ipass:Int, here:Long) = {
     val mm = modelmats(0);
     val gm = gmats(0);
     if (ipass == 0) {
@@ -62,7 +61,7 @@ abstract class ClusteringModel(override val opts:ClusteringModel.Opts) extends M
     }
   }
   
-  def evalbatch(mats:Array[Mat], ipass:Int, here:Long):FMat = {
+  def evalblock(mats:Array[Mat], ipass:Int, here:Long):FMat = {
   	lastpos = here;
   	if (mats.length == 1) {
   		evalfun(gmats(0));

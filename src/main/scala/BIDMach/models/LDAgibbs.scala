@@ -17,7 +17,6 @@ import BIDMach._
  - alpha(0.001f) Dirichlet prior on document-topic weights
  - beta(0.0001f) Dirichlet prior on word-topic weights
  - nsamps(100) the number of repeated samples to take
- - useBino(false): use poisson (default) or binomial sampling (if true)
  *
  * Other key parameters inherited from the learner, datasource and updater:
  - batchSize: the number of samples processed in a block
@@ -61,7 +60,7 @@ class LDAgibbs(override val opts:LDAgibbs.Opts = new LDAgibbs.Options) extends F
     updatemats(1) = mm.zeros(mm.nrows, 1)
   }
   
-  def uupdate(sdata:Mat, user:Mat, ipass: Int, pos:Long):Unit = {
+  def uupdate(sdata:Mat, user:Mat, ipass: Int):Unit = {
     
     	if (putBack < 0 || ipass == 0) user.set(1f)
         for (i <- 0 until opts.uiter) yield {
@@ -75,7 +74,7 @@ class LDAgibbs(override val opts:LDAgibbs.Opts = new LDAgibbs.Options) extends F
     	val mnew = updatemats(0)
     	mnew.set(0f)
   
-    	LDAgibbs.LDAsample(mm, user, mnew, unew, preds, dc, opts.nsamps, opts.useBino)
+    	LDAgibbs.LDAsample(mm, user, mnew, unew, preds, opts.nsamps)
         
     	if (traceMem) println("uupdate %d %d %d, %d %d %d %d %f %d" format (mm.GUID, user.GUID, sdata.GUID, preds.GUID, dc.GUID, pc.GUID, unew.GUID, GPUmem._1, getGPU))
     	user ~ unew + opts.alpha
@@ -83,13 +82,13 @@ class LDAgibbs(override val opts:LDAgibbs.Opts = new LDAgibbs.Options) extends F
   
   }
   
-  def mupdate(sdata:Mat, user:Mat, ipass: Int, pos:Long):Unit = {
+  def mupdate(sdata:Mat, user:Mat, ipass: Int):Unit = {
 	val um = updatemats(0)
 	um ~ um + opts.beta 
   	sum(um, 2, updatemats(1))
   }
   
-  def evalfun(sdata:Mat, user:Mat, ipass:Int, pos:Long):FMat = {  
+  def evalfun(sdata:Mat, user:Mat, ipass:Int):FMat = {  
   	val preds = DDS(mm, user, sdata)
   	val dc = sdata.contents
   	val pc = preds.contents
@@ -114,30 +113,25 @@ object LDAgibbs  {
     var alpha = 0.1f
     var beta = 0.1f
     var nsamps = 100f
-    var useBino = false // Use binomial or poisson (default) sampling
   }
   
   class Options extends Opts {}
   
-  def LDAsample(A:Mat, B:Mat, AN:Mat, BN:Mat, C:Mat, D:Mat, nsamps:Float, doBino:Boolean):Unit = {
-    (A, B, AN, BN, C, D) match {
-     case (a:GMat, b:GMat, an:GMat, bn:GMat, c:GSMat, d:GMat) => doLDAgibbs(a, b, an, bn, c, d, nsamps, doBino):Unit
+   def LDAsample(A:Mat, B:Mat, AN:Mat, BN:Mat, C:Mat, nsamps:Float):Unit = {
+    (A, B, AN, BN, C) match {
+     case (a:GMat, b:GMat, an:GMat, bn:GMat, c:GSMat) => doLDAgibbs(a, b, an, bn, c, nsamps):Unit
      case _ => throw new RuntimeException("LDAgibbs: arguments not recognized")
     }
   }
 
-  def doLDAgibbs(A:GMat, B:GMat, AN:GMat, BN:GMat, C:GSMat, D:GMat, nsamps:Float, doBino:Boolean):Unit = {
+  def doLDAgibbs(A:GMat, B:GMat, AN:GMat, BN:GMat, C:GSMat, nsamps:Float):Unit = {
     if (A.nrows != B.nrows || C.nrows != A.ncols || C.ncols != B.ncols || 
         A.nrows != AN.nrows || A.ncols != AN.ncols || B.nrows != BN.nrows || B.ncols != BN.ncols) {
       throw new RuntimeException("LDAgibbs dimensions mismatch")
     }
-    var err = if (doBino) {
-      CUMACH.LDAgibbsBino(A.nrows, C.nnz, A.data, B.data, AN.data, BN.data, C.ir, C.ic, D.data, C.data, nsamps.toInt)
-    } else {
-      CUMACH.LDAgibbs(A.nrows, C.nnz, A.data, B.data, AN.data, BN.data, C.ir, C.ic, C.data, nsamps)
-    }
+    var err = CUMACH.LDAgibbs(A.nrows, C.nnz, A.data, B.data, AN.data, BN.data, C.ir, C.ic, C.data, nsamps)
     if (err != 0) throw new RuntimeException(("GPU %d LDAgibbs kernel error "+cudaGetErrorString(err)) format getGPU)
-    Mat.nflops += (if (doBino) 40L else 12L) * C.nnz * A.nrows   // Charge 10 for Poisson RNG
+    Mat.nflops += 12L * C.nnz * A.nrows   // Charge 10 for Poisson RNG
   }
   
   def doLDAgibbsx(A:GMat, B:GMat, C:GSMat, Ms:GIMat, Us:GIMat):Unit = {

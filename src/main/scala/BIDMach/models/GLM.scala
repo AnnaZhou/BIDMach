@@ -1,6 +1,6 @@
 package BIDMach.models
 
-import BIDMat.{Mat,SBMat,CMat,DMat,FMat,IMat,HMat,GDMat,GMat,GIMat,GSMat,GSDMat,SMat,SDMat}
+import BIDMat.{Mat,SBMat,CMat,DMat,FMat,IMat,HMat,GMat,GIMat,GSMat,SMat,SDMat}
 import BIDMat.MatFunctions._
 import BIDMat.SciFunctions._
 import edu.berkeley.bid.CUMACH
@@ -51,94 +51,49 @@ class GLM(opts:GLM.Opts) extends RegressionModel(opts) {
   
   val linkArray = GLM.linkArray
   
-  var mylinks:Mat = null;
-  var iweight:Mat = null;
-  var ulim:Mat = null;
-  var llim:Mat = null;
-  var totflops = 0L;
-  var hashFeatures = 0;
-  // For integrated ADAGrad updater
-  var vexp:Mat = null;
-  var texp:Mat = null;
-  var lrate:Mat = null;
-  var sumsq:Mat = null;
-  var firststep = -1f;
-  var waitsteps = 0;
-  var epsilon = 0f;
+  var mylinks:Mat = null
+  var iweight:Mat = null
+  var ulim:Mat = null
+  var llim:Mat = null
+  var totflops = 0L
+  var hashFeatures = false
   
   override def copyTo(mod:Model) = {
     super.copyTo(mod);
     val rmod = mod.asInstanceOf[GLM];
     rmod.mylinks = mylinks;
-    rmod.iweight = iweight;    
+    rmod.iweight = iweight;  
+    
   }
   
   override def init() = {
-  	useGPU = opts.useGPU && Mat.hasCUDA > 0
-    val data0 = mats(0)
-    val m = if (opts.hashFeatures > 0) opts.hashFeatures else size(data0, 1)
-    val targetData = mats.length > 1
-    val d = if (opts.targmap.asInstanceOf[AnyRef] != null) {
-      opts.targmap.nrows 
-    } else if (opts.targets.asInstanceOf[AnyRef] != null) {
-      opts.targets.nrows 
-    } else {
-      mats(1).nrows  
-    }
-    val sdat = (sum(data0,2).t + 0.5f).asInstanceOf[FMat]
-    sp = sdat / sum(sdat)
-    println("corpus perplexity=%f" format (math.exp(-(sp ddot ln(sp)))))
-    
-    if (refresh) {
-    	val mm = zeros(d,m);
-      setmodelmats(Array(mm))
-    }
-    modelmats(0) = convertMat(modelmats(0));
-    updatemats = Array(modelmats(0).zeros(modelmats(0).nrows, modelmats(0).ncols));
-    targmap = if (opts.targmap.asInstanceOf[AnyRef] != null) convertMat(opts.targmap) else opts.targmap
-    if (! targetData) {
-      targets = if (opts.targets.asInstanceOf[AnyRef] != null) convertMat(opts.targets) else opts.targets
-      mask =    if (opts.rmask.asInstanceOf[AnyRef] != null) convertMat(opts.rmask) else opts.rmask
-    } 
+    super.init()
     mylinks = if (useGPU) GIMat(opts.links) else opts.links;
     iweight = opts.iweight;
-    if (iweight.asInstanceOf[AnyRef] != null && useGPU) iweight = convertMat(iweight);
+    if (iweight.asInstanceOf[AnyRef] != null && useGPU) iweight = GMat(iweight);
     if (mask.asInstanceOf[AnyRef] != null) modelmats(0) ~ modelmats(0) ∘ mask;
     totflops = 0L;
     for (i <- 0 until opts.links.length) {
       totflops += linkArray(opts.links(i)).fnflops;
     }
-    ulim = convertMat(opts.lim)
+    ulim = if (useGPU) GMat(row(opts.lim)) else row(opts.lim);
     llim = - ulim;
     hashFeatures = opts.hashFeatures;
-    if (opts.aopts != null) initADAGrad(d, m);
-  }
-  
-  def initADAGrad(d:Int, m:Int) = {
-    val aopts = opts.asInstanceOf[ADAGrad.Opts];
-    firststep = -1f;
-    lrate = convertMat(aopts.lrate);
-    texp = convertMat(aopts.texp);
-    vexp = convertMat(aopts.vexp);
-    sumsq = convertMat(zeros(d, m));
-    sumsq.set(aopts.initsumsq);
-    waitsteps = aopts.waitsteps;
-    epsilon = aopts.epsilon;
   }
     
-  def mupdate(in:Mat, ipass:Int, pos:Long) = {
+  def mupdate(in:Mat) = {
     val targs = targets * in
     min(targs, 1f, targs)
     val dweights = if (iweight.asInstanceOf[AnyRef] != null) iweight * in else null
-    mupdate3(in, targs, dweights, ipass, pos)
+    mupdate3(in, targs, dweights)
   }
   
-  def mupdate2(in:Mat, targ:Mat, ipass:Int, pos:Long) = mupdate3(in, targ, null, ipass, pos)
+  def mupdate2(in:Mat, targ:Mat) = mupdate3(in, targ, null)
   
-  def mupdate3(in:Mat, targ:Mat, dweights:Mat, ipass:Int, pos:Long) = {        
+  def mupdate3(in:Mat, targ:Mat, dweights:Mat) = {        
     val ftarg = full(targ);
     val targs = if (targmap.asInstanceOf[AnyRef] != null) targmap * ftarg else ftarg;
-    val eta = if (hashFeatures > 0) GLM.hashMult(modelmats(0), in, opts.hashBound1, opts.hashBound2) else modelmats(0) * in 
+    val eta = if (hashFeatures) GLM.hashMult(modelmats(0), in) else modelmats(0) * in 
     if (opts.lim > 0) {
       max(eta, llim, eta);
       min(eta, ulim, eta);
@@ -146,24 +101,13 @@ class GLM(opts:GLM.Opts) extends RegressionModel(opts) {
     GLM.preds(eta, eta, mylinks, totflops);
     GLM.derivs(eta, targs, eta, mylinks, totflops);
     if (dweights.asInstanceOf[AnyRef] != null) eta ~ eta ∘ dweights;
-    if (opts.aopts != null) {
-      if (firststep <= 0) firststep = pos.toFloat;
-      val step = (pos + firststep)/firststep;
-      if (hashFeatures == 0) {
-      	ADAGrad.multUpdate(eta, in, modelmats(0), sumsq, mask, lrate, texp, vexp, epsilon, step, waitsteps);
-      } else {
-        ADAGrad.hashmultUpdate(eta, in, hashFeatures, opts.hashBound1, opts.hashBound2, 1,
-            modelmats(0), sumsq, mask, lrate, texp, vexp, epsilon, step, waitsteps);
-      }
+    if (hashFeatures) {
+      updatemats(0) <-- GLM.hashMultT(eta, in, modelmats(0).ncols);
     } else {
-    	if (hashFeatures > 0) {
-    		updatemats(0) <-- GLM.hashMultT(eta, in, modelmats(0).ncols, opts.hashBound1, opts.hashBound2);
-    	} else {
-    		updatemats(0) ~ eta *^ in;
-    	}
-    	if (mask.asInstanceOf[AnyRef] != null) {
-    		updatemats(0) ~ updatemats(0) ∘ mask
-    	}
+    	updatemats(0) ~ eta *^ in;
+    }
+    if (mask.asInstanceOf[AnyRef] != null) {
+      updatemats(0) ~ updatemats(0) ∘ mask
     }
   }
   
@@ -179,7 +123,7 @@ class GLM(opts:GLM.Opts) extends RegressionModel(opts) {
   def meval3(in:Mat, targ:Mat, dweights:Mat):FMat = {
     val ftarg = full(targ);
     val targs = if (!(putBack >= 0) && targmap.asInstanceOf[AnyRef] != null) targmap * ftarg else ftarg;
-    val eta = if (hashFeatures > 0) GLM.hashMult(modelmats(0), in, opts.hashBound1, opts.hashBound2) else modelmats(0) * in;
+    val eta = if (hashFeatures) GLM.hashMult(modelmats(0), in) else modelmats(0) * in;
     GLM.preds(eta, eta, mylinks, totflops);
     val v = GLM.llfun(eta, targs, mylinks, totflops);
     if (putBack >= 0) {targ <-- eta};
@@ -198,10 +142,7 @@ object GLM {
     var links:IMat = null;
     var iweight:FMat = null;
     var lim = 0f;
-    var hashFeatures = 0;
-    var hashBound1:Int = 1000000;
-    var hashBound2:Int = 1000000;
-    var aopts:ADAGrad.Opts = null;
+    var hashFeatures = false;
   }
   
   val linear = 0;
@@ -209,6 +150,7 @@ object GLM {
   val maxp = 2;
   val svm = 3;
   val lbfgs = 4;
+  val cocoa = 5;
   
   object LinearLink extends GLMlink {
   	def link(in:Float) = {
@@ -367,10 +309,40 @@ object GLM {
 
     val fnflops = 2;
   }
+   
+   object COCOALink extends GLMlink {
+    def link(in:Float) = {
+      in
+    }
 
+    def mean(in:Float) = {
+      in
+    }
+
+    def derivlink(pred:Float, targ:Float) = {
+      val ttarg = 2 * targ - 1;
+      if (pred * ttarg < 1f) ttarg else 0f;
+    }
+
+    def likelihood(pred:Float, targ:Float) = {
+      val ttarg = 2 * targ - 1;
+      scala.math.min(0f, ttarg * pred - 1f);
+    }
+
+    override val linkfn = link _;
+
+    override val derivfn = derivlink _;
+
+    override val meanfn = mean _;
+
+    override val likelihoodfn = likelihood _;
+
+    val fnflops = 2;
+  }
+   
   object LinkEnum extends Enumeration {
   	type LinkEnum = Value;
-  	val Linear, Logistic, Maxp, SVMLink = Value
+  	val Linear, Logistic, Maxp, SVM, LBFGS,COCOALink  = Value
   }
 
   abstract class GLMlink {
@@ -381,7 +353,7 @@ object GLM {
   	val fnflops:Int
   }
   
-  val linkArray = Array[GLMlink](LinearLink, LogisticLink, MaxpLink, SVMLink, LBFGSLink)
+  val linkArray = Array[GLMlink](LinearLink, LogisticLink, MaxpLink, SVMLink, LBFGSLink, COCOALink)
   
   class Options extends Opts {}
   
@@ -410,34 +382,6 @@ object GLM {
         CUMACH.applypreds(geta.data, gilinks.data, gout.data, geta.nrows, geta.ncols)
         out
       }
-      case (geta:GDMat, gilinks:GIMat, gout:GDMat) => {
-        Mat.nflops += totflops * geta.ncols
-        CUMACH.applydpreds(geta.data, gilinks.data, gout.data, geta.nrows, geta.ncols)
-        out
-      }
-    }
-  }
-  
-  def preds(eta:Mat, links:Mat, totflops:Long):Mat = {
-    (eta, links) match {
-      case (feta:FMat, ilinks:IMat) => {
-        val fout = FMat.newOrCheckFMat(eta.nrows, eta.ncols, null, eta.GUID, links.GUID, "GLM.preds".##)
-        Mat.nflops += totflops * feta.ncols
-        meanHelper(feta, fout, ilinks, 0, feta.ncols)
-        fout
-      }
-      case (geta:GMat, gilinks:GIMat) => {
-        val gout = GMat.newOrCheckGMat(eta.nrows, eta.ncols, null, eta.GUID, links.GUID, "GLM.preds".##)
-        Mat.nflops += totflops * geta.ncols
-        CUMACH.applypreds(geta.data, gilinks.data, gout.data, geta.nrows, geta.ncols)
-        gout
-      }
-      case (geta:GDMat, gilinks:GIMat) => {
-      	val gout = GDMat.newOrCheckGDMat(eta.nrows, eta.ncols, null, eta.GUID, links.GUID, "GLM.preds".##)
-        Mat.nflops += totflops * geta.ncols
-        CUMACH.applydpreds(geta.data, gilinks.data, gout.data, geta.nrows, geta.ncols)
-        gout
-      }
     }
   }
   
@@ -464,111 +408,61 @@ object GLM {
         CUMACH.applylls(gpred.data, gtarg.data, gilinks.data, out.data, gpred.nrows, gpred.ncols)
         out
       }
-      case (gpred:GDMat, gtarg:GDMat, gilinks:GIMat) => {
-        Mat.nflops += totflops * gpred.ncols
-        val out = (gpred + 3f)
-        CUMACH.applydlls(gpred.data, gtarg.data, gilinks.data, out.data, gpred.nrows, gpred.ncols)
-        out
-      }
     }
   }
   
-  def derivs(pred:Mat, targ:Mat, out:Mat, links:Mat, totflops:Long) = {
+   def derivs(pred:Mat, targ:Mat, out:Mat, links:Mat, totflops:Long) = {
     (pred, targ, out, links) match {
       case (fpred:FMat, ftarg:FMat, fout:FMat, ilinks:IMat) => {
-      	Mat.nflops += 10L * ftarg.length;
-      	var i = 0;
-      	while (i < ftarg.ncols) {
-      		var j = 0;
-      		while (j < ftarg.nrows) {
-      			val fun = GLM.linkArray(ilinks(j)).derivfn;
-      			fout.data(j + i * out.nrows) = fun(fpred.data(j + i * ftarg.nrows),  ftarg.data(j + i * ftarg.nrows));
-      			j += 1;
-      		}
-      		i += 1;
-      	}
-      	fout;
+        Mat.nflops += 10L * ftarg.length
+            var i = 0
+            while (i < ftarg.ncols) {
+                var j = 0
+                while (j < ftarg.nrows) {
+                    val fun = GLM.linkArray(ilinks(j)).derivfn
+                    fout.data(j + i * out.nrows) = fun(fpred.data(j + i * ftarg.nrows),  ftarg.data(j + i * ftarg.nrows))
+                    j += 1
+                }
+                i += 1
+            }
+            mean(out,2)
       }
       case (gpred:GMat, gtarg:GMat, gout:GMat, gilinks:GIMat) => {
         Mat.nflops += totflops * gpred.ncols
         CUMACH.applyderivs(gpred.data, gtarg.data, gilinks.data, gout.data, gpred.nrows, gpred.ncols)
         gout
       }
-      case (gpred:GDMat, gtarg:GDMat, gout:GDMat, gilinks:GIMat) => {
-        Mat.nflops += totflops * gpred.ncols
-        CUMACH.applydderivs(gpred.data, gtarg.data, gilinks.data, gout.data, gpred.nrows, gpred.ncols)
-        gout
-      }
     }
-  }
+   }
    
-  def derivs(pred:Mat, targ:Mat, links:Mat, totflops:Long) = {
-    (pred, targ, links) match {
-      case (fpred:FMat, ftarg:FMat, ilinks:IMat) => {
-      	val fout = FMat.newOrCheckFMat(pred.nrows, pred.ncols, null, pred.GUID, targ.GUID, links.GUID, "GLM.derivs".##)
-        Mat.nflops += 10L * ftarg.length;
-      	var i = 0;
-      	while (i < ftarg.ncols) {
-      		var j = 0
-      				while (j < ftarg.nrows) {
-      					val fun = GLM.linkArray(ilinks(j)).derivfn;
-      					fout.data(j + i * fout.nrows) = fun(fpred.data(j + i * ftarg.nrows),  ftarg.data(j + i * ftarg.nrows));
-      					j += 1;
-      				}
-      		i += 1;
-      	}
-      	fout;
-      }
-      case (gpred:GMat, gtarg:GMat, gilinks:GIMat) => {
-      	val gout = GMat.newOrCheckGMat(pred.nrows, pred.ncols, null, pred.GUID, targ.GUID, links.GUID, "GLM.derivs".##)
-        Mat.nflops += totflops * gpred.ncols
-        CUMACH.applyderivs(gpred.data, gtarg.data, gilinks.data, gout.data, gpred.nrows, gpred.ncols)
-        gout
-      }
-      case (gpred:GDMat, gtarg:GDMat, gilinks:GIMat) => {
-        val gout = GDMat.newOrCheckGDMat(pred.nrows, pred.ncols, null, pred.GUID, targ.GUID, links.GUID, "GLM.derivs".##)
-        Mat.nflops += totflops * gpred.ncols
-        CUMACH.applydderivs(gpred.data, gtarg.data, gilinks.data, gout.data, gpred.nrows, gpred.ncols)
-        gout
-      }
-    }
-  }
-   
-  def hashMult(a:GMat, b:GSMat, bound1:Int, bound2:Int):GMat = {
+  def hashMult(a:GMat, b:GSMat):GMat = {
     val c = GMat.newOrCheckGMat(a.nrows, b.ncols, null, a.GUID, b.GUID, "hashMult".##);
     c.clear;
-    val npercol = b.nnz / b.ncols;
-    Mat.nflops += 1L * a.nrows * npercol * b.nnz;
-    CUMACH.hashMult(a.nrows, a.ncols, b.ncols, bound1, bound2, a.data, b.data, b.ir, b.jc, c.data, 0);
+    CUMACH.hashMult(a.nrows, a.ncols, b.ncols, a.data, b.data, b.ir, b.jc, c.data, 0);
     c
   }
   
-  def hashMult(a:Mat, b:Mat, bound1:Int, bound2:Int):Mat = {
+  def hashMult(a:Mat, b:Mat):Mat = {
   	(a, b) match {
-  	  case (ga:GMat, gb:GSMat) => hashMult(ga, gb, bound1, bound2)
+  	  case (ga:GMat, gb:GSMat) => hashMult(ga, gb)
   	}
   }
-
   
-  def hashMultT(a:GMat, b:GSMat, nfeats:Int, bound1:Int, bound2:Int):GMat = {
+  def hashMultT(a:GMat, b:GSMat, nfeats:Int):GMat = {
     val c = GMat.newOrCheckGMat(a.nrows, nfeats, null, a.GUID, b.GUID, nfeats, "hashMultT".##);
     c.clear;
-    val npercol = b.nnz / b.ncols;
-    Mat.nflops += 1L * a.nrows * npercol * b.nnz;
-    CUMACH.hashMult(a.nrows, nfeats, b.ncols, bound1, bound2, a.data, b.data, b.ir, b.jc, c.data, 1);
+    CUMACH.hashMult(a.nrows, nfeats, b.ncols, a.data, b.data, b.ir, b.jc, c.data, 1);
     c
   }
   
-  def hashMultT(a:Mat, b:Mat, nfeats:Int, bound1:Int, bound2:Int):Mat = {
+  def hashMultT(a:Mat, b:Mat, nfeats:Int):Mat = {
   	(a, b) match {
-  	  case (ga:GMat, gb:GSMat) => hashMultT(ga, gb, nfeats, bound1, bound2)
+  	  case (ga:GMat, gb:GSMat) => hashMultT(ga, gb, nfeats)
   	}
   }
-
+  
   def hashCross(a:GMat, b:GSMat, c:GSMat):GMat = {
     val d = GMat.newOrCheckGMat(a.nrows, b.ncols, null, a.GUID, b.GUID, "hashCross".##);
-    val npercol = b.nnz / b.ncols;
-    Mat.nflops += 1L * a.nrows * npercol * b.nnz;
     d.clear;
     CUMACH.hashCross(a.nrows, a.ncols, b.ncols, a.data, b.data, b.ir, b.jc, c.data, c.ir, c.jc, d.data, 0);
     d
@@ -582,8 +476,6 @@ object GLM {
   
   def hashCrossT(a:GMat, b:GSMat, c:GSMat, nfeats:Int):GMat = {
     val d = GMat.newOrCheckGMat(a.nrows, nfeats, null, a.GUID, b.GUID, "hashCrossT".##);
-    val npercol = b.nnz / b.ncols;
-    Mat.nflops += 1L * a.nrows * npercol * b.nnz;
     d.clear;
     CUMACH.hashCross(a.nrows, nfeats, b.ncols, a.data, b.data, b.ir, b.jc, c.data, c.ir, c.jc, d.data, 1);
     d
@@ -607,6 +499,14 @@ object GLM {
     new LBFGS(nopts.asInstanceOf[LBFGS.Opts])
   } 
   
+  def COCOAUpdater(nopts:Updater.Opts) = {
+    new COCOA(nopts.asInstanceOf[COCOA.Opts])
+  } 
+ 
+  def cocoaRegularizer(nopts:Mixin.Opts):Array[Mixin] = {
+    Array(new COCOARegularizer(nopts.asInstanceOf[COCOARegularizer.Opts]))
+  }
+  
   def mkRegularizer(nopts:Mixin.Opts):Array[Mixin] = {
     Array(new L1Regularizer(nopts.asInstanceOf[L1Regularizer.Opts]))
   }
@@ -625,6 +525,9 @@ object GLM {
     
   class LearnLBFGSOptions extends Learner.Options with GLM.Opts with MatDS.Opts with LBFGS.Opts with L1Regularizer.Opts
   class LearnLBFGS12Options extends Learner.Options with GLM.Opts with MatDS.Opts with LBFGS.Opts with L1Regularizer.Opts with L2Regularizer.Opts
+  
+  class LearnCOCOAOptions extends Learner.Options with GLM.Opts with MatDS.Opts with COCOA.Opts with COCOARegularizer.Opts
+  class LearnCOCOA12Options extends Learner.Options with GLM.Opts with MatDS.Opts with COCOA.Opts with L1Regularizer.Opts with L2Regularizer.Opts
      
   // Basic in-memory learner with generated target
   def learner(mat0:Mat, d:Int = 0) = { 
@@ -638,26 +541,9 @@ object GLM {
   	    new ADAGrad(opts), 
   	    opts)
     (nn, opts)
-  } 
+  }  
     
   def learner(mat0:Mat):(Learner, LearnOptions) = learner(mat0, 0)
-  
-    // Basic in-memory learner with generated target
-  def learnerX(mat0:Mat, d:Int = 0) = { 
-    val opts = new LearnOptions
-    opts.batchSize = math.min(10000, mat0.ncols/30 + 1)
-    opts.lrate = 1f
-    opts.aopts = opts
-  	val nn = new Learner(
-  	    new MatDS(Array(mat0:Mat), opts), 
-  	    new GLM(opts), 
-  	    mkRegularizer(opts),
-  	    null, 
-  	    opts)
-    (nn, opts)
-  } 
-    
-  def learnerX(mat0:Mat):(Learner, LearnOptions) = learnerX(mat0, 0)
   
   // Basic in-memory learner with explicit target
   def learner(mat0:Mat, targ:Mat, d:Int):(Learner, LearnOptions) = {
@@ -672,25 +558,6 @@ object GLM {
         model, 
         mkRegularizer(mopts),
         new ADAGrad(mopts), 
-        mopts)
-    (mm, mopts)
-  }
-
-  
-  // Basic in-memory learner with explicit target
-  def learnerX(mat0:Mat, targ:Mat, d:Int):(Learner, LearnOptions) = {
-    val mopts = new LearnOptions;
-    mopts.lrate = 1f
-    mopts.batchSize = math.min(10000, mat0.ncols/30 + 1)
-    if (mopts.links == null) mopts.links = izeros(1,targ.nrows)
-    mopts.links.set(d)
-    val model = new GLM(mopts)
-    mopts.aopts = mopts;
-    val mm = new Learner(
-        new MatDS(Array(mat0, targ), mopts), 
-        model, 
-        mkRegularizer(mopts),
-        null, 
         mopts)
     (mm, mopts)
   }
@@ -743,21 +610,6 @@ object GLM {
     (mm, mopts)
   }
   
-  def learnerX(ds:DataSource):(Learner, GOptions) = {
-    val mopts = new GOptions;
-    mopts.lrate = 1f
-    mopts.autoReset = false
-    mopts.aopts = mopts;
-    val model = new GLM(mopts)
-    val mm = new Learner(
-        ds, 
-        model, 
-        mkRegularizer(mopts),
-        null,
-        mopts);
-    (mm, mopts)
-  }
-  
   class FGOptions extends Learner.Options with GLM.Opts with ADAGrad.Opts with L1Regularizer.Opts with FilesDS.Opts
   
   // A learner that uses a files data source specified by a list of strings.  
@@ -778,26 +630,15 @@ object GLM {
   }
   
   // This function constructs a predictor from an existing model 
-  def predictor(model0:Model, mat1:Mat, preds:Mat):(Learner, LearnOptions) = {
-    val model = model0.asInstanceOf[GLM]
+  def predictor(model:Model, mat1:Mat, preds:Mat, d:Int):(Learner, LearnOptions) = {
     val nopts = new LearnOptions;
     nopts.batchSize = math.min(10000, mat1.ncols/30 + 1)
+    if (nopts.links == null) nopts.links = izeros(preds.nrows,1)
+    nopts.links.set(d)
     nopts.putBack = 1
-    val newmod = new GLM(nopts);
-    newmod.refresh = false
-    newmod.copyFrom(model);
-    val mopts = model.opts.asInstanceOf[GLM.Opts];
-    nopts.targmap = mopts.targmap;
-    nopts.links = mopts.links;
-    nopts.targets = mopts.targets;
-    nopts.iweight = mopts.iweight;
-    nopts.lim = mopts.lim;
-    nopts.hashFeatures = mopts.hashFeatures;
-    nopts.hashBound1 = mopts.hashBound1;
-    nopts.hashBound2 = mopts.hashBound2;   
     val nn = new Learner(
         new MatDS(Array(mat1, preds), nopts), 
-        newmod, 
+        model, 
         null,
         null,
         nopts)
@@ -864,13 +705,72 @@ object GLM {
     (nn, nopts)
   }
   
-    // Basic in-memory SVM learner with explicit target
+def COCOAlearner(mat0:Mat, targ:Mat):(Learner, LearnCOCOA12Options) = {
+    val mopts = new LearnCOCOA12Options;
+//    mopts.lrate = 1f
+    mopts.batchSize = math.min(10000, mat0.ncols/30 + 1)
+    if (mopts.links == null) mopts.links = izeros(targ.nrows,1)
+    mopts.links.set(5)
+    mopts.reg1weight = 0.1f
+    mopts.reg2weight = 0.1f
+    val model = new GLM(mopts)
+    val mm = new Learner(
+        new MatDS(Array(mat0, targ), mopts), 
+        model, 
+        cocoaRegularizer(mopts),
+        new COCOA(mopts), mopts)
+    (mm, mopts)
+  }
+   
+     // This function constructs a predictor from an existing model 
+  def COCOApredictor(model:Model, mat1:Mat, preds:Mat):(Learner, LearnCOCOA12Options) = {
+    val nopts = new LearnCOCOA12Options;
+    nopts.batchSize = math.min(10000, mat1.ncols/30 + 1)
+    if (nopts.links == null) nopts.links = izeros(preds.nrows,1)
+    nopts.links.set(5)
+    nopts.putBack = 1
+    val nn = new Learner(
+        new MatDS(Array(mat1, preds), nopts), 
+        model.asInstanceOf[GLM], 
+        null,
+        null,
+        nopts)
+    (nn, nopts)
+  }
+   // This function constructs a learner and a predictor. 
+  def COCOAlearner(mat0:Mat, targ:Mat, mat1:Mat, preds:Mat):(Learner,LearnCOCOAOptions , Learner, LearnCOCOAOptions) = {
+    val mopts = new LearnCOCOAOptions;
+    val nopts = new LearnCOCOAOptions;
+//    mopts.lrate = 1f
+    mopts.batchSize = math.min(10000, mat0.ncols/30 + 1)
+    if (mopts.links == null) mopts.links = izeros(targ.nrows,1)
+    mopts.links.set(5)
+    mopts.reg1weight = 0.1f
+//    mopts.reg2weight = 0.1f
+    nopts.links = mopts.links
+    nopts.batchSize = mopts.batchSize
+    nopts.putBack = 1
+    val model = new GLM(mopts)
+    val mm = new Learner(
+        new MatDS(Array(mat0, targ), mopts), 
+        model, 
+        cocoaRegularizer(mopts),
+        new COCOA(mopts), mopts)
+    val nn = new Learner(
+        new MatDS(Array(mat1, preds), nopts), 
+        model, 
+        null,
+        null,
+        nopts)
+    (mm, mopts, nn, nopts)
+  }
+  
   def LBFGSlearner(mat0:Mat, targ:Mat):(Learner, LearnLBFGS12Options) = {
     val mopts = new LearnLBFGS12Options;
     mopts.lrate = 1f
     mopts.batchSize = math.min(10000, mat0.ncols/30 + 1)
     if (mopts.links == null) mopts.links = izeros(targ.nrows,1)
-    mopts.links.set(4)
+    mopts.links.set(5)
     mopts.reg1weight = 0.1f
     mopts.reg2weight = 0.1f
     val model = new GLM(mopts)
