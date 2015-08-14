@@ -8,7 +8,7 @@ class L1Regularizer(override val opts:L1Regularizer.Opts = new L1Regularizer.Opt
    def compute(mats:Array[Mat], step:Float) = {
      for (i <- 0 until opts.r1nmats) {
        val v = if (opts.reg1weight.ncols == 1) - opts.reg1weight else - opts.reg1weight(?,i);
-       myYY(i) ~ (-updatemats(i)) + 0f  //java.lang.NullPointerException
+     //  myYY(i) ~ (-updatemats(i)) + 0f  //java.lang.NullPointerException
      //  mydW(i) ~ ((updatemats(i))) + 0f 
      //  println( modelmats(i) )
        
@@ -34,7 +34,7 @@ class L2Regularizer(override val opts:L2Regularizer.Opts = new L2Regularizer.Opt
    def compute(mats:Array[Mat], step:Float) = {
   	 for (i <- 0 until opts.r2nmats) {
   	   val v = if (opts.reg2weight.ncols == 1) - opts.reg2weight else - opts.reg2weight(?,i);
-       myYY(i) ~ (-updatemats(i)) + 0f
+    //   myYY(i) ~ (-updatemats(i)) + 0f
    //    mydW(i) ~ (-(updatemats(i))) + 0f  
   	 //  println( modelmats(i) )
      //  println(updatemats(i))
@@ -59,7 +59,7 @@ class COCOARegularizer(override val opts:COCOARegularizer.Opts = new COCOARegula
    def compute(mats:Array[Mat], step:Float) = {
      for (i <- 0 until opts.r1nmats) {
        val v = if (opts.reg1weight.ncols == 1) - opts.reg1weight else - opts.reg1weight(?,i);
-       myYY(i) ~ (-updatemats(i)) + 0f  //java.lang.NullPointerException
+     //  myYY(i) ~ (-updatemats(i)) + 0f  //java.lang.NullPointerException
      //  mydW(i) ~ ((updatemats(i))) + 0f 
      //  println( modelmats(i) )
        

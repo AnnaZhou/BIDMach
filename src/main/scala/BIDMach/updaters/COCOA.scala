@@ -238,7 +238,7 @@ class COCOA(override val opts:COCOA.Opts = new COCOA.Options) extends Updater {
         }
        
           myY(?,4) = myGrad;
-        if(myro(4,0) != 0){myS(?,4) = (-0.1)*myr(?,5);}
+        if(myro(4,0) != 0){myS(?,4) = ( (-0.1) * myr(?,5) );}
         else{ 
           myS(?,4) = (-0.9)*grad;    
          }
