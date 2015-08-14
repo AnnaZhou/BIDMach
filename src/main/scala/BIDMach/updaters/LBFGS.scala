@@ -226,8 +226,8 @@ class LBFGS(override val opts:LBFGS.Opts = new LBFGS.Options) extends Updater {
          myS(?,j)= myS(?,(j+1) );
         }      
           myY(?,4) = myGrad;
-     //   if(myro(4,0) != 0){ myS(?,4) = ( (-0.1) * myr(?,5) ); }
-     //   else
+        if(myro(4,0) != 0){ myS(?,4) = ( (-0.1) * myr(?,5) ); }
+        else
          { 
           myS(?,4) = ( (-0.1)*grad );    
          }
